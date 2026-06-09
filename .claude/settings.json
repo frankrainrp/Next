@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(pnpm typecheck)",
+      "PowerShell(pnpm build)",
+      "PowerShell(New-Item -ItemType Directory -Force *)",
+      "PowerShell(Invoke-WebRequest -Uri http://localhost:3000 *)",
+      "PowerShell(Start-Sleep *)",
+      "PowerShell(git add .)",
+      "PowerShell(git commit *)",
+      "PowerShell(git push *)",
+      "PowerShell(pnpm dev)",
+      "Bash(for *)",
+      "Bash(grep *)",
+      "Bash(ls *)"
+    ]
+  }
+}

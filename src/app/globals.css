@@ -1645,6 +1645,12 @@ button:focus-visible {
   color: var(--success);
 }
 
+.wizard-step-dot.locked {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .wizard-step-dot:disabled {
   opacity: 0.4;
   cursor: not-allowed;

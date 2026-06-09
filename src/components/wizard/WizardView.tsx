@@ -246,11 +246,22 @@ export default function WizardView({ projectId: initialProjectId, deepSeekApiKey
 
   const goToStep = useCallback(
     (step: WizardStep) => {
-      if (step < currentStep || isStepComplete(currentStep)) {
+      // Can always go to current or previous steps
+      if (step <= currentStep) {
         setCurrentStep(step);
         const labels = ["Intent Capture", "Deep Profile", "Node Analysis", "3-Round Confirm", "Execution Plan", "Track & Adjust"];
         setStatus(`Step ${step}: ${labels[step - 1]} — ${isStepComplete(step) ? "✅ Complete" : "Fill in details and submit"}`);
+        return;
       }
+      // Can only advance one step at a time, and only if current is complete
+      if (step === currentStep + 1 && isStepComplete(currentStep)) {
+        setCurrentStep(step);
+        const labels = ["Intent Capture", "Deep Profile", "Node Analysis", "3-Round Confirm", "Execution Plan", "Track & Adjust"];
+        setStatus(`Step ${step}: ${labels[step - 1]} — fill in details and submit`);
+        return;
+      }
+      // Blocked - must complete current step first
+      setStatus(`🔒 Complete Step ${currentStep} before moving to Step ${step}`);
     },
     [currentStep, isStepComplete],
   );
@@ -293,14 +304,20 @@ export default function WizardView({ projectId: initialProjectId, deepSeekApiKey
     <main className="wizard-stage">
       {/* Step Progress Bar */}
       <nav className="wizard-progress-bar" aria-label="6-step wizard progress">
-        {STEPS.map((s, i) => (
+        {STEPS.map((s, i) => {
+          const stepNum = s.id as WizardStep;
+          const isDone = isStepComplete(stepNum);
+          const isCurrent = currentStep === s.id;
+          // Locked: future steps beyond the immediate next one, or next step when current isn't complete
+          const isLocked = stepNum > currentStep + 1 || (stepNum === currentStep + 1 && !isStepComplete(currentStep));
+          return (
           <button
             key={s.id}
-            className={`wizard-step-dot ${currentStep === s.id ? "active" : ""} ${isStepComplete(s.id as WizardStep) ? "done" : ""}`}
-            onClick={() => goToStep(s.id as WizardStep)}
-            disabled={busy}
+            className={`wizard-step-dot ${isCurrent ? "active" : ""} ${isDone ? "done" : ""} ${isLocked ? "locked" : ""}`}
+            onClick={() => goToStep(stepNum)}
+            disabled={busy || isLocked}
             type="button"
-            title={`Step ${s.id}: ${s.title}`}
+            title={isLocked ? `Locked — complete Step ${currentStep} first` : `Step ${s.id}: ${s.title}`}
           >
             <span className="step-indicator">
               {isStepComplete(s.id as WizardStep) ? <CheckCircle2 size={18} /> : <s.icon size={18} />}
@@ -308,7 +325,8 @@ export default function WizardView({ projectId: initialProjectId, deepSeekApiKey
             <span className="step-label">{s.label}</span>
             {i < 5 ? <span className="step-connector" data-done={isStepComplete(s.id as WizardStep)} /> : null}
           </button>
-        ))}
+        );
+        })}
       </nav>
 
       {/* Main wizard body */}
