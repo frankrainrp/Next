@@ -24,14 +24,16 @@ import {
   Settings2,
   Sparkles,
   Table2,
+  Wand2,
   Wrench,
   X,
 } from "lucide-react";
+import WizardView from "@/components/wizard/WizardView";
 
 type PriorityBand = "P0" | "P1" | "P2" | "P3";
 type BacklogStatus = "Idea" | "Ready" | "Selected" | "Deferred" | "Done" | "Dropped";
 type SprintItemStatus = "Todo" | "InProgress" | "Blocked" | "Review" | "Done";
-type WorkspaceView = "chat" | "backlogs" | "scrum";
+type WorkspaceView = "chat" | "backlogs" | "scrum" | "wizard";
 type ThemeName = "liquid" | "sketch";
 type PromptStage = "step1" | "step2" | "step3" | "step4" | "step5" | "step6";
 
@@ -688,14 +690,16 @@ export default function Home() {
     <main className="sketch-stage" data-theme={theme}>
       <div className="workspace-frame">
         <SideRail activeView={view} onChange={setView} />
-        <section className="workspace-body">
-          <WorkspaceTopbar
-            busy={busy}
-            canExport={Boolean(projectId)}
-            exportBusy={exportBusy}
-            onOpenExport={() => setExportOpen(true)}
-            onOpenSettings={() => setSettingsOpen(true)}
-          />
+        <section className={`workspace-body ${view === "wizard" ? "workspace-body--full" : ""}`}>
+          {view !== "wizard" ? (
+            <WorkspaceTopbar
+              busy={busy}
+              canExport={Boolean(projectId)}
+              exportBusy={exportBusy}
+              onOpenExport={() => setExportOpen(true)}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
+          ) : null}
 
           {view === "chat" ? (
             <ChatView
@@ -718,6 +722,32 @@ export default function Home() {
               promptStage={selectedPromptStage}
               reviewCount={reviews.length}
               retroCount={retros.length}
+            />
+          ) : null}
+
+          {view === "wizard" ? (
+            <WizardView
+              projectId={projectId}
+              deepSeekApiKey={deepSeekApiKey}
+              onClose={() => setView("chat")}
+              onCreateProject={async () => {
+                const response = await api<{ ok: true; data: Project }>("/api/projects", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    title: "6-Step Wizard Project",
+                    action: "Build a product using the 6-step AI PM methodology",
+                    purpose: "Go from vague description to executable plan with AI guidance",
+                  }),
+                });
+                setProjects((items) => [response.data, ...items]);
+                setProjectId(response.data.id);
+                setBacklog([]);
+                setSprints([]);
+                setReviews([]);
+                setRetros([]);
+                setBurndown(null);
+                return response.data.id;
+              }}
             />
           ) : null}
 
@@ -831,6 +861,12 @@ function SideRail({
           icon={Flame}
           label="Scrum"
           onClick={() => onChange("scrum")}
+        />
+        <RailButton
+          active={activeView === "wizard"}
+          icon={Wand2}
+          label="6-Step Wizard"
+          onClick={() => onChange("wizard")}
         />
       </div>
     </nav>
