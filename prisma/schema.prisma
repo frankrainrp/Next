@@ -1,0 +1,454 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model AppUser {
+  id          String   @id @default(cuid())
+  clerkUserId String   @unique
+  email       String   @unique
+  name        String?
+  timezone    String   @default("Asia/Shanghai")
+  projects    Project[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Project {
+  id             String          @id @default(cuid())
+  ownerId        String
+  owner          AppUser         @relation(fields: [ownerId], references: [id])
+  title          String
+  action         String
+  purpose        String
+  phase          ProjectPhase    @default(IntentCapture)
+  officialDueAt  DateTime?
+  hardDueAt      DateTime?
+  safeDueAt      DateTime?
+  contextJson    Json?
+  capabilityJson Json?
+  goals          Goal[]
+  requirements   Requirement[]
+  uploadedFiles  UploadedFile[]
+  notifications  Notification[]
+  backlogItems   ProductBacklogItem[]
+  sprints        ScrumSprint[]
+  proposals      ArtifactProposal[]
+  decisionLogs   DecisionLogEntry[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model Goal {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  title       String
+  type        GoalType @default(Secondary)
+  priority    Int      @default(1)
+  successText String
+  createdAt   DateTime @default(now())
+}
+
+model Requirement {
+  id          String            @id @default(cuid())
+  projectId   String
+  project     Project           @relation(fields: [projectId], references: [id])
+  text        String
+  type        RequirementType
+  source      RequirementSource
+  confidence  Float             @default(0.6)
+  confirmedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model UploadedFile {
+  id        String     @id @default(cuid())
+  projectId String
+  project   Project    @relation(fields: [projectId], references: [id])
+  ownerId   String
+  blobUrl   String
+  pathname  String
+  filename  String
+  mimeType  String
+  sizeBytes Int
+  status    FileStatus @default(Uploaded)
+  chunks    DocumentChunk[]
+  insights  DocumentInsight[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model DocumentChunk {
+  id             String       @id @default(cuid())
+  uploadedFileId String
+  uploadedFile   UploadedFile @relation(fields: [uploadedFileId], references: [id])
+  projectId      String
+  chunkIndex      Int
+  sourceLabel     String?
+  text            String
+  tokenEstimate   Int
+  createdAt       DateTime     @default(now())
+}
+
+model DocumentInsight {
+  id             String       @id @default(cuid())
+  uploadedFileId String
+  uploadedFile   UploadedFile @relation(fields: [uploadedFileId], references: [id])
+  projectId      String
+  summary        String
+  requirements   Json
+  deadlines      Json?
+  scoringRules   Json?
+  constraints    Json?
+  confidence     Float
+  createdAt      DateTime     @default(now())
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  userId      String
+  projectId   String?
+  project     Project?           @relation(fields: [projectId], references: [id])
+  type        NotificationType
+  title       String
+  body        String
+  status      NotificationStatus @default(Unread)
+  scheduledAt DateTime?
+  deliveries  NotificationDelivery[]
+  createdAt   DateTime           @default(now())
+  readAt      DateTime?
+}
+
+model NotificationDelivery {
+  id             String              @id @default(cuid())
+  notificationId String
+  notification   Notification        @relation(fields: [notificationId], references: [id])
+  channel        NotificationChannel
+  provider       String
+  providerId     String?
+  status         DeliveryStatus
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime            @default(now())
+}
+
+model ProductBacklogItem {
+  id                 String                @id @default(cuid())
+  projectId          String
+  project            Project               @relation(fields: [projectId], references: [id])
+  title              String
+  userStory          String
+  problem            String
+  acceptanceCriteria Json
+  status             ProductBacklogStatus  @default(Idea)
+  priorityBand       PriorityBand          @default(P2)
+  priorityScore      Int                   @default(0)
+  priorityExplanation String
+  effort             Int                   @default(1)
+  risk               String?
+  dependencyJson     Json?
+  source             BacklogSource         @default(Chat)
+  sprintItems        SprintBacklogItem[]
+  increments         IncrementEvidence[]
+  priorityScores     PriorityScore[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@index([projectId, status])
+  @@index([projectId, priorityBand])
+}
+
+model ScrumSprint {
+  id              String               @id @default(cuid())
+  projectId       String
+  project         Project              @relation(fields: [projectId], references: [id])
+  sprintNumber    Int
+  name            String
+  goal            String
+  startDate       DateTime
+  endDate         DateTime
+  status          SprintStatus         @default(Planned)
+  workingDaysJson Json?
+  items           SprintBacklogItem[]
+  burndownPoints  BurndownPoint[]
+  increments      IncrementEvidence[]
+  review          SprintReview?
+  retro           SprintRetro?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([projectId, sprintNumber])
+  @@index([projectId, status])
+}
+
+model SprintBacklogItem {
+  id                   String             @id @default(cuid())
+  sprintId             String
+  sprint               ScrumSprint        @relation(fields: [sprintId], references: [id])
+  productBacklogItemId String?
+  productBacklogItem   ProductBacklogItem? @relation(fields: [productBacklogItemId], references: [id])
+  task                 String
+  owner                String?
+  status               SprintItemStatus   @default(Todo)
+  initialEffort        Float              @default(1)
+  remainingEffort      Float              @default(1)
+  doneCondition        String
+  blocker              String?
+  targetDate           DateTime?
+  evidenceLink         String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([sprintId, status])
+  @@index([productBacklogItemId])
+}
+
+model IncrementEvidence {
+  id                   String               @id @default(cuid())
+  sprintId             String
+  sprint               ScrumSprint          @relation(fields: [sprintId], references: [id])
+  productBacklogItemId String
+  productBacklogItem   ProductBacklogItem   @relation(fields: [productBacklogItemId], references: [id])
+  deliverable          String
+  acceptanceEvidence   Json
+  qaStatus             QaStatus             @default(Untested)
+  demoNotes            String?
+  reviewDecision       ReviewDecision       @default(NeedsFollowUp)
+  followUpJson         Json?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([sprintId, qaStatus])
+  @@index([productBacklogItemId])
+}
+
+model BurndownPoint {
+  id                 String       @id @default(cuid())
+  sprintId           String
+  sprint             ScrumSprint  @relation(fields: [sprintId], references: [id])
+  date               DateTime
+  idealRemaining     Float
+  actualRemaining    Float
+  projectedRemaining Float?
+  scopeChange        Float        @default(0)
+  blockedCount       Int          @default(0)
+  createdAt          DateTime     @default(now())
+
+  @@unique([sprintId, date])
+}
+
+model PriorityScore {
+  id                   String             @id @default(cuid())
+  backlogItemId         String
+  backlogItem           ProductBacklogItem @relation(fields: [backlogItemId], references: [id])
+  userValue             Int
+  businessValue         Int
+  urgency               Int
+  riskReduction         Int
+  dependencyUnlock      Int
+  confidence            Int
+  effort                Int
+  finalScore            Int
+  priorityBand          PriorityBand
+  explanation           String
+  createdAt             DateTime           @default(now())
+
+  @@index([backlogItemId, createdAt])
+}
+
+model SprintReview {
+  id                  String       @id @default(cuid())
+  sprintId            String       @unique
+  sprint              ScrumSprint  @relation(fields: [sprintId], references: [id])
+  demoOutcome         String
+  acceptedItemsJson   Json
+  followUpItemsJson   Json?
+  stakeholderFeedback String?
+  backlogChangesJson  Json?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+}
+
+model SprintRetro {
+  id              String       @id @default(cuid())
+  sprintId        String       @unique
+  sprint          ScrumSprint  @relation(fields: [sprintId], references: [id])
+  whatWorked      Json
+  whatDidNotWork  Json
+  rootCause       String?
+  experiment      String?
+  actionItemsJson Json
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model ArtifactProposal {
+  id             String          @id @default(cuid())
+  projectId      String
+  project        Project         @relation(fields: [projectId], references: [id])
+  sourceMessageId String?
+  type           ProposalType
+  status         ProposalStatus  @default(Pending)
+  payloadJson    Json
+  rationale      String
+  appliedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([projectId, status])
+}
+
+model DecisionLogEntry {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  actorUserId String?
+  action      String
+  reason      String
+  beforeJson  Json?
+  afterJson   Json?
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+enum ProjectPhase {
+  IntentCapture
+  ContextCollection
+  NodeAnalysis
+  RequirementConfirmation
+  Planning
+  ExecutionTracking
+  Completed
+}
+
+enum GoalType {
+  Primary
+  Secondary
+  Safety
+}
+
+enum RequirementType {
+  Hard
+  Soft
+  Format
+  Quality
+  Constraint
+}
+
+enum RequirementSource {
+  User
+  UploadedDoc
+  AiInferred
+}
+
+enum FileStatus {
+  Uploaded
+  Extracting
+  Extracted
+  Failed
+}
+
+enum NotificationType {
+  DailyPlan
+  ProgressCheck
+  SafeDeadline
+  HardDeadline
+  PlanApproval
+  FileProcessed
+  EstimateChanged
+}
+
+enum NotificationStatus {
+  Unread
+  Read
+  Archived
+}
+
+enum NotificationChannel {
+  InApp
+  Email
+  BrowserPush
+}
+
+enum DeliveryStatus {
+  Pending
+  Sent
+  Failed
+  Skipped
+}
+
+enum ProductBacklogStatus {
+  Idea
+  Ready
+  Selected
+  Deferred
+  Done
+  Dropped
+}
+
+enum PriorityBand {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum BacklogSource {
+  Chat
+  Review
+  Retro
+  Manual
+  ImportedDoc
+  AiProposal
+}
+
+enum SprintStatus {
+  Planned
+  Active
+  Review
+  Closed
+  Cancelled
+}
+
+enum SprintItemStatus {
+  Todo
+  InProgress
+  Blocked
+  Review
+  Done
+}
+
+enum QaStatus {
+  Untested
+  Passed
+  Failed
+  Waived
+}
+
+enum ReviewDecision {
+  Accepted
+  NeedsFollowUp
+  Deferred
+}
+
+enum ProposalType {
+  ProductBacklogDraft
+  SprintBacklogDraft
+  PriorityChange
+  BurndownUpdate
+  ReviewRecord
+  RetroRecord
+}
+
+enum ProposalStatus {
+  Pending
+  Applied
+  Rejected
+  Superseded
+}
