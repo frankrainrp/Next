@@ -35,6 +35,10 @@ export type BacklogItemRecord = {
   risk?: string;
   dependencies: string[];
   source: "Chat" | "Review" | "Retro" | "Manual" | "ImportedDoc" | "AiProposal";
+  /** Fine-grained technical specification written by the Step 4 agent (markdown). */
+  technicalSpec?: string;
+  /** Ready-to-paste AI coding prompt (Cursor / Claude Code) written by the Step 4 agent. */
+  codingPrompt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -500,6 +504,48 @@ export async function createProposal(projectId: string, input: ProposalInput) {
   project.updatedAt = timestamp;
   await writeStore(data);
   return proposal;
+}
+
+export async function updateProjectContext(projectId: string, patch: Record<string, unknown>) {
+  const data = await readStore();
+  const project = getProject(data, projectId);
+  project.context = { ...(project.context ?? {}), ...patch };
+  project.updatedAt = now();
+  await writeStore(data);
+  return project;
+}
+
+export async function updateBacklogItem(
+  projectId: string,
+  itemId: string,
+  patch: Partial<
+    Pick<
+      BacklogItemRecord,
+      | "title"
+      | "userStory"
+      | "problem"
+      | "acceptanceCriteria"
+      | "status"
+      | "priorityBand"
+      | "priorityScore"
+      | "priorityExplanation"
+      | "effort"
+      | "risk"
+      | "dependencies"
+      | "technicalSpec"
+      | "codingPrompt"
+    >
+  >,
+) {
+  const data = await readStore();
+  const project = getProject(data, projectId);
+  const item = project.backlog.find((candidate) => candidate.id === itemId);
+  if (!item) throw new Error("BACKLOG_ITEM_NOT_FOUND");
+  Object.assign(item, patch);
+  item.updatedAt = now();
+  project.updatedAt = item.updatedAt;
+  await writeStore(data);
+  return item;
 }
 
 export function draftBacklogFromPrompt(prompt: string) {

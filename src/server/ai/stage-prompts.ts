@@ -14,33 +14,33 @@ export const stagePromptConfig: Record<
   }
 > = {
   step1: {
-    label: "Step 1 - Requirements Capture",
-    fileName: "step1_需求捕获.md",
+    label: "Step 1 - Idea Intake & Founder Fit",
+    fileName: "en/step1_idea_intake.md",
     intent: "clarify",
   },
   step2: {
-    label: "Step 2 - Deep Discovery",
-    fileName: "step2_深度采集.md",
+    label: "Step 2 - Customer, Problem & Positioning",
+    fileName: "en/step2_customer_problem_positioning.md",
     intent: "clarify",
   },
   step3: {
-    label: "Step 3 - Node Breakdown",
-    fileName: "step3_节点拆分.md",
+    label: "Step 3 - MVP Scope & Feature Architecture",
+    fileName: "en/step3_mvp_feature_architecture.md",
     intent: "draft_backlog",
   },
   step4: {
-    label: "Step 4 - Three-Round Confirmation",
-    fileName: "step4_三轮确认.md",
+    label: "Step 4 - Build Blueprint",
+    fileName: "en/step4_build_blueprint.md",
     intent: "draft_backlog",
   },
   step5: {
-    label: "Step 5 - Delivery Planning",
-    fileName: "step5_执行规划.md",
+    label: "Step 5 - Development Roadmap",
+    fileName: "en/step5_development_roadmap.md",
     intent: "plan_sprint",
   },
   step6: {
-    label: "Step 6 - Continuous Tracking",
-    fileName: "step6_持续跟踪.md",
+    label: "Step 6 - Delivery, Tracking & Iteration",
+    fileName: "en/step6_delivery_tracking.md",
     intent: "review_retro",
   },
 };

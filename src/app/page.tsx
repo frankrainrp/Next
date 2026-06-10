@@ -1,17 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
   ArrowRight,
-  Bot,
   Check,
-  CheckCircle2,
-  ClipboardCheck,
   Clock3,
   Download,
   FileText,
   Flame,
+  History,
   ListChecks,
   Loader2,
   MessageSquareText,
@@ -22,18 +20,16 @@ import {
   Save,
   Send,
   Settings2,
-  Sparkles,
   Table2,
-  Wand2,
   Wrench,
   X,
 } from "lucide-react";
-import WizardView from "@/components/wizard/WizardView";
-
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 type PriorityBand = "P0" | "P1" | "P2" | "P3";
 type BacklogStatus = "Idea" | "Ready" | "Selected" | "Deferred" | "Done" | "Dropped";
 type SprintItemStatus = "Todo" | "InProgress" | "Blocked" | "Review" | "Done";
-type WorkspaceView = "chat" | "backlogs" | "scrum" | "wizard";
+type WorkspaceView = "chat" | "backlogs" | "scrum";
 type ThemeName = "liquid" | "sketch";
 type PromptStage = "step1" | "step2" | "step3" | "step4" | "step5" | "step6";
 
@@ -61,6 +57,8 @@ type BacklogItem = {
   risk?: string;
   dependencies: string[];
   source: "Chat" | "Review" | "Retro" | "Manual" | "ImportedDoc" | "AiProposal";
+  technicalSpec?: string;
+  codingPrompt?: string;
 };
 
 type SprintItem = {
@@ -164,13 +162,22 @@ type MarkdownExportResponse = {
   content: string;
 };
 
-type AiChatResponse = {
+type AgentSessionState = {
+  stage: PromptStage;
+  completedStages: PromptStage[];
+};
+
+type AgentChatResponse = {
   ok: true;
-  mode: string;
   reply: string;
-  promptStage: PromptStage;
-  promptSource: string;
-  proposal: { payload: { productBacklogItems: BacklogDraft[] } };
+  session: AgentSessionState;
+};
+
+type AgentSessionResponse = {
+  ok: true;
+  session: AgentSessionState & {
+    messages: Array<{ role: "user" | "assistant"; content: string; at: string }>;
+  };
 };
 
 const defaultCustomAgentPrompt =
@@ -180,15 +187,15 @@ const defaultPrompt =
   "";
 
 const promptPlaceholder =
-  "Describe the product goal, team constraints, architecture direction, and the first workflow you want Scrum to plan.";
+  "Tell me what you want to build — even one vague sentence is enough to start.";
 
-const promptStageOptions: Array<{ value: PromptStage; label: string }> = [
-  { value: "step1", label: "Step 1 - Capture" },
-  { value: "step2", label: "Step 2 - Discover" },
-  { value: "step3", label: "Step 3 - Backlog" },
-  { value: "step4", label: "Step 4 - Confirm" },
-  { value: "step5", label: "Step 5 - Plan" },
-  { value: "step6", label: "Step 6 - Track" },
+const agentStageMeta: Array<{ value: PromptStage; label: string; role: string }> = [
+  { value: "step1", label: "1 · Intake", role: "Startup Intake Coach" },
+  { value: "step2", label: "2 · Customer", role: "Market & User Research Strategist" },
+  { value: "step3", label: "3 · MVP Scope", role: "Product Architect" },
+  { value: "step4", label: "4 · Blueprint", role: "Technical Blueprint Architect" },
+  { value: "step5", label: "5 · Roadmap", role: "Delivery Planner" },
+  { value: "step6", label: "6 · Track", role: "Delivery Coach & Growth Tracker" },
 ];
 
 const initialMessages: ChatMessage[] = [
@@ -196,7 +203,7 @@ const initialMessages: ChatMessage[] = [
     id: "assistant-0",
     role: "assistant",
     content:
-      "Describe the product goal. I will turn it into confirmed Scrum artifacts, technical backlog details, sprint work, burndown data, and review records.",
+      "Hi — I'm your AI product manager for solo SaaS builders. Tell me your SaaS idea in one sentence (vague is fine). Together we'll nail down who it's for, what pain it solves, the smallest MVP worth building, a full build blueprint with ready-to-paste AI coding prompts, a realistic roadmap — and then track the build all the way to launch.",
   },
 ];
 
@@ -235,11 +242,12 @@ function priorityClass(band: PriorityBand) {
   return "priority-chip priority-p3";
 }
 
-function intentForPromptStage(stage: PromptStage) {
-  if (stage === "step1" || stage === "step2") return "clarify";
-  if (stage === "step5") return "plan_sprint";
-  if (stage === "step6") return "review_retro";
-  return "draft_backlog";
+/** MoSCoW maps 1:1 onto priority bands: P0 Must (red), P1 Should (orange), P2 Could (blue), P3 Won't (black). */
+function moscowLabel(band: PriorityBand) {
+  if (band === "P0") return "Must";
+  if (band === "P1") return "Should";
+  if (band === "P2") return "Could";
+  return "Won't";
 }
 
 export default function Home() {
@@ -253,7 +261,7 @@ export default function Home() {
   const [retros, setRetros] = useState<RetroRecord[]>([]);
   const [burndown, setBurndown] = useState<Burndown | null>(null);
   const [prompt, setPrompt] = useState(defaultPrompt);
-  const [selectedPromptStage, setSelectedPromptStage] = useState<PromptStage>("step3");
+  const [agentSession, setAgentSession] = useState<AgentSessionState>({ stage: "step1", completedStages: [] });
   const [draft, setDraft] = useState<BacklogDraft[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialMessages);
   const [status, setStatus] = useState("Ready");
@@ -262,6 +270,7 @@ export default function Home() {
   const [technicalDoc, setTechnicalDoc] = useState<BacklogTechnicalDoc | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [deepSeekApiKey, setDeepSeekApiKey] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPreset, setExportPreset] = useState<AgentPreset>("scrum-dev-agent");
@@ -291,8 +300,6 @@ export default function Home() {
     [activeSprint],
   );
 
-  const completedCount = activeSprint?.items.filter((item) => item.status === "Done").length ?? 0;
-
   const loadProjectData = useCallback(async (nextProjectId: string) => {
     if (!nextProjectId) {
       setBacklog([]);
@@ -300,18 +307,33 @@ export default function Home() {
       setReviews([]);
       setRetros([]);
       setBurndown(null);
+      setAgentSession({ stage: "step1", completedStages: [] });
+      setChatMessages(initialMessages);
       return;
     }
-    const [backlogRes, sprintRes, reviewRes, retroRes] = await Promise.all([
+    const [backlogRes, sprintRes, reviewRes, retroRes, sessionRes] = await Promise.all([
       api<{ ok: true; data: BacklogItem[] }>(`/api/projects/${nextProjectId}/backlog`),
       api<{ ok: true; data: Sprint[] }>(`/api/projects/${nextProjectId}/sprints`),
       api<{ ok: true; data: ReviewRecord[] }>(`/api/projects/${nextProjectId}/reviews`),
       api<{ ok: true; data: RetroRecord[] }>(`/api/projects/${nextProjectId}/retros`),
+      api<AgentSessionResponse>(`/api/agent/session?projectId=${nextProjectId}`),
     ]);
     setBacklog(backlogRes.data);
     setSprints(sprintRes.data);
     setReviews(reviewRes.data);
     setRetros(retroRes.data);
+    setAgentSession({ stage: sessionRes.session.stage, completedStages: sessionRes.session.completedStages });
+    if (sessionRes.session.messages.length > 0) {
+      setChatMessages(
+        sessionRes.session.messages.map((message, index) => ({
+          id: `${message.role}-${index}-${message.at}`,
+          role: message.role,
+          content: message.content,
+        })),
+      );
+    } else {
+      setChatMessages(initialMessages);
+    }
     if (sprintRes.data[0]) {
       const burndownRes = await api<{ ok: true; data: Burndown }>(
         `/api/projects/${nextProjectId}/sprints/${sprintRes.data[0].id}/burndown`,
@@ -396,104 +418,53 @@ export default function Home() {
     }
   }
 
-  async function generateBacklog() {
-    if (!projectId) {
-      setStatus("Create a workspace first");
-      return;
-    }
-    const normalizedPrompt = prompt.trim();
-    if (!normalizedPrompt) {
-      setStatus("Describe the product goal before generating a backlog.");
+  async function sendToAgent() {
+    const message = prompt.trim();
+    if (!message) {
+      setStatus("Type a message for the product agent first.");
       return;
     }
     setBusy(true);
-    setChatMessages((items) => [
-      ...items,
-      { id: `user-${Date.now()}`, role: "user", content: normalizedPrompt },
-    ]);
+    setPrompt("");
+    setChatMessages((items) => [...items, { id: `user-${Date.now()}`, role: "user", content: message }]);
     try {
-      const response = await api<{
-        ok: true;
-        reply: string;
-        promptSource: string;
-        proposal: { payload: { productBacklogItems: BacklogDraft[] } };
-      }>("/api/ai/chat", {
+      let currentProjectId = projectId;
+      if (!currentProjectId) {
+        const created = await api<{ ok: true; data: Project }>("/api/projects", {
+          method: "POST",
+          body: JSON.stringify({
+            title: "Product Agent Project",
+            action: "Define the product through the six-stage agent",
+            purpose: "Turn a vague idea into executable Scrum artifacts and tracked delivery.",
+          }),
+        });
+        setProjects((items) => [created.data, ...items]);
+        setProjectId(created.data.id);
+        currentProjectId = created.data.id;
+      }
+      const response = await api<AgentChatResponse>("/api/agent/chat", {
         method: "POST",
-        body: JSON.stringify({
-          projectId,
-          prompt: normalizedPrompt,
-          providerApiKey: deepSeekApiKey.trim() || undefined,
-          promptStage: "step3",
-          intent: "draft_backlog",
-        }),
-      });
-      setDraft(response.proposal.payload.productBacklogItems);
-      await api(`/api/projects/${projectId}/ai/proposals`, {
-        method: "POST",
-        body: JSON.stringify({
-          type: "ProductBacklogDraft",
-          rationale: response.reply,
-          payload: response.proposal.payload,
-        }),
+        body: JSON.stringify({ projectId: currentProjectId, message }),
       });
       setChatMessages((items) => [
         ...items,
-        {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          content: `Generated ${response.proposal.payload.productBacklogItems.length} Product Backlog draft items using ${response.promptSource}. Apply them to write into the real API store.`,
-        },
+        { id: `assistant-${Date.now()}`, role: "assistant", content: response.reply },
       ]);
-      setStatus("Backlog proposal generated and stored");
+      setAgentSession(response.session);
+      await loadProjectData(currentProjectId);
+      const stageLabel = agentStageMeta.find((item) => item.value === response.session.stage)?.label ?? response.session.stage;
+      setStatus(`Product agent replied · stage ${stageLabel}`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to generate backlog");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function testPromptEffect() {
-    const normalizedPrompt = prompt.trim();
-    if (!normalizedPrompt) {
-      setStatus("Enter a prompt before testing a stage prompt.");
-      return;
-    }
-    setBusy(true);
-    setChatMessages((items) => [
-      ...items,
-      {
-        id: `user-test-${Date.now()}`,
-        role: "user",
-        content: `[Prompt test: ${promptStageOptions.find((item) => item.value === selectedPromptStage)?.label}] ${normalizedPrompt}`,
-      },
-    ]);
-    try {
-      const response = await api<AiChatResponse>("/api/ai/chat", {
-        method: "POST",
-        body: JSON.stringify({
-          projectId: projectId || undefined,
-          prompt: normalizedPrompt,
-          providerApiKey: deepSeekApiKey.trim() || undefined,
-          promptStage: selectedPromptStage,
-          intent: intentForPromptStage(selectedPromptStage),
-        }),
-      });
-      const draftCount = response.proposal.payload.productBacklogItems.length;
+      const detail = error instanceof Error ? error.message : "Agent request failed";
       setChatMessages((items) => [
         ...items,
         {
-          id: `assistant-test-${Date.now()}`,
+          id: `assistant-error-${Date.now()}`,
           role: "assistant",
-          content: [
-            `Prompt test used ${response.promptSource} in ${response.mode}.`,
-            response.reply,
-            draftCount > 0 ? `Structured draft items returned: ${draftCount}. They were not saved.` : "No Scrum artifact was saved.",
-          ].join(" "),
+          content: `⚠️ ${detail}. Check the model/search keys in Settings (.env) and try again.`,
         },
       ]);
-      setStatus(`Prompt test completed: ${response.promptSource}`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to test prompt");
+      setStatus(detail);
     } finally {
       setBusy(false);
     }
@@ -689,65 +660,30 @@ export default function Home() {
   return (
     <main className="sketch-stage" data-theme={theme}>
       <div className="workspace-frame">
-        <SideRail activeView={view} onChange={setView} />
-        <section className={`workspace-body ${view === "wizard" ? "workspace-body--full" : ""}`}>
-          {view !== "wizard" ? (
-            <WorkspaceTopbar
-              busy={busy}
-              canExport={Boolean(projectId)}
-              exportBusy={exportBusy}
-              onOpenExport={() => setExportOpen(true)}
-              onOpenSettings={() => setSettingsOpen(true)}
-            />
-          ) : null}
+        <SideRail
+          activeView={view}
+          historyOpen={historyOpen}
+          onChange={setView}
+          onToggleHistory={() => setHistoryOpen((open) => !open)}
+        />
+        <section className="workspace-body">
+          <WorkspaceTopbar
+            busy={busy}
+            canExport={Boolean(projectId)}
+            exportBusy={exportBusy}
+            onOpenExport={() => setExportOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
 
           {view === "chat" ? (
             <ChatView
-              activeSprint={activeSprint}
-              backlogCount={backlog.length}
+              agentSession={agentSession}
               busy={busy}
               chatMessages={chatMessages}
-              completedCount={completedCount}
-              draft={draft}
-              onApplyDraft={applyDraft}
-              onCreateSprint={createSprint}
-              onCreateWorkspace={createWorkspace}
-              onGenerateBacklog={generateBacklog}
               onPromptChange={setPrompt}
-              onPromptStageChange={setSelectedPromptStage}
-              onTestPrompt={testPromptEffect}
+              onSend={sendToAgent}
               placeholder={promptPlaceholder}
-              projectReady={Boolean(projectId)}
               prompt={prompt}
-              promptStage={selectedPromptStage}
-              reviewCount={reviews.length}
-              retroCount={retros.length}
-            />
-          ) : null}
-
-          {view === "wizard" ? (
-            <WizardView
-              projectId={projectId}
-              deepSeekApiKey={deepSeekApiKey}
-              onClose={() => setView("chat")}
-              onCreateProject={async () => {
-                const response = await api<{ ok: true; data: Project }>("/api/projects", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    title: "6-Step Wizard Project",
-                    action: "Build a product using the 6-step AI PM methodology",
-                    purpose: "Go from vague description to executable plan with AI guidance",
-                  }),
-                });
-                setProjects((items) => [response.data, ...items]);
-                setProjectId(response.data.id);
-                setBacklog([]);
-                setSprints([]);
-                setReviews([]);
-                setRetros([]);
-                setBurndown(null);
-                return response.data.id;
-              }}
             />
           ) : null}
 
@@ -767,6 +703,7 @@ export default function Home() {
           {view === "scrum" ? (
             <ScrumView
               activeSprint={activeSprint}
+              backlog={backlog}
               burndown={burndown}
               busy={busy}
               onSaveReviewRetro={saveReviewRetro}
@@ -790,6 +727,28 @@ export default function Home() {
                 setSelectedBacklogItem(null);
                 setTechnicalDoc(null);
               }}
+            />
+          ) : null}
+
+          {historyOpen ? (
+            <HistoryDrawer
+              busy={busy}
+              onClose={() => setHistoryOpen(false)}
+              onNewChat={() => {
+                setProjectId("");
+                loadProjectData("").catch((error) => setStatus(error.message));
+                setView("chat");
+                setHistoryOpen(false);
+                setStatus("New chat — your first message creates the project");
+              }}
+              onSelectProject={(nextProjectId) => {
+                setProjectId(nextProjectId);
+                loadProjectData(nextProjectId).catch((error) => setStatus(error.message));
+                setView("chat");
+                setHistoryOpen(false);
+              }}
+              projectId={projectId}
+              projects={projects}
             />
           ) : null}
 
@@ -831,18 +790,76 @@ export default function Home() {
   );
 }
 
+function HistoryDrawer({
+  busy,
+  onClose,
+  onNewChat,
+  onSelectProject,
+  projectId,
+  projects,
+}: {
+  busy: boolean;
+  onClose: () => void;
+  onNewChat: () => void;
+  onSelectProject: (projectId: string) => void;
+  projectId: string;
+  projects: Project[];
+}) {
+  return (
+    <aside aria-label="Project history" className="history-drawer">
+      <header className="drawer-header">
+        <div>
+          <p className="eyebrow">History</p>
+          <h2>Your projects</h2>
+        </div>
+        <button aria-label="Close project history" className="drawer-close" onClick={onClose} type="button">
+          <X size={18} />
+        </button>
+      </header>
+
+      <button className="history-new-chat" disabled={busy} onClick={onNewChat} type="button">
+        <Plus size={15} />
+        New chat
+      </button>
+
+      <div className="history-list">
+        {projects.length === 0 ? (
+          <EmptyLine text="No projects yet. Start a chat and the agent creates one for you." />
+        ) : (
+          projects.map((project) => (
+            <button
+              className={`history-item ${project.id === projectId ? "is-active" : ""}`}
+              disabled={busy}
+              key={project.id}
+              onClick={() => onSelectProject(project.id)}
+              type="button"
+            >
+              <span className="history-item-title">{project.title}</span>
+              <span className="history-item-meta">
+                {new Date(project.updatedAt).toLocaleDateString()}{" "}
+                {new Date(project.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+    </aside>
+  );
+}
+
 function SideRail({
   activeView,
+  historyOpen,
   onChange,
+  onToggleHistory,
 }: {
   activeView: WorkspaceView;
+  historyOpen: boolean;
   onChange: (view: WorkspaceView) => void;
+  onToggleHistory: () => void;
 }) {
   return (
     <nav aria-label="Workspace navigation" className="side-rail">
-      <button aria-label="ai product manager" className="rail-brand" type="button">
-        <Bot size={22} strokeWidth={1.8} />
-      </button>
       <div className="rail-actions">
         <RailButton
           active={activeView === "chat"}
@@ -863,10 +880,10 @@ function SideRail({
           onClick={() => onChange("scrum")}
         />
         <RailButton
-          active={activeView === "wizard"}
-          icon={Wand2}
-          label="6-Step Wizard"
-          onClick={() => onChange("wizard")}
+          active={historyOpen}
+          icon={History}
+          label="Project history"
+          onClick={onToggleHistory}
         />
       </div>
     </nav>
@@ -933,107 +950,73 @@ function WorkspaceTopbar({
 }
 
 function ChatView({
-  activeSprint,
-  backlogCount,
+  agentSession,
   busy,
   chatMessages,
-  completedCount,
-  draft,
-  onApplyDraft,
-  onCreateSprint,
-  onCreateWorkspace,
-  onGenerateBacklog,
   onPromptChange,
-  onPromptStageChange,
-  onTestPrompt,
+  onSend,
   placeholder,
-  projectReady,
   prompt,
-  promptStage,
-  reviewCount,
-  retroCount,
 }: {
-  activeSprint?: Sprint;
-  backlogCount: number;
+  agentSession: AgentSessionState;
   busy: boolean;
   chatMessages: ChatMessage[];
-  completedCount: number;
-  draft: BacklogDraft[];
-  onApplyDraft: () => void;
-  onCreateSprint: () => void;
-  onCreateWorkspace: () => void;
-  onGenerateBacklog: () => void;
   onPromptChange: (value: string) => void;
-  onPromptStageChange: (stage: PromptStage) => void;
-  onTestPrompt: () => void;
+  onSend: () => void;
   placeholder: string;
-  projectReady: boolean;
   prompt: string;
-  promptStage: PromptStage;
-  reviewCount: number;
-  retroCount: number;
 }) {
+  const currentMeta = agentStageMeta.find((item) => item.value === agentSession.stage);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [chatMessages, busy]);
+
   return (
     <section className="chat-layout">
-      <div className="chat-scroll">
-        <div className="chat-agent-mark">
-          <Bot size={18} strokeWidth={1.8} />
-        </div>
+      <StageProgress session={agentSession} />
+      <div className="chat-scroll" ref={scrollRef}>
         {chatMessages.map((message) => (
           <article className={`chat-bubble ${message.role}`} key={message.id}>
-            <p>{message.content}</p>
+            {message.role === "assistant" ? (
+              <div className="chat-markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+              </div>
+            ) : (
+              <p style={{ whiteSpace: "pre-wrap" }}>{message.content}</p>
+            )}
           </article>
         ))}
-        <FlowPanel
-          activeSprint={activeSprint}
-          backlogCount={backlogCount}
-          busy={busy}
-          completedCount={completedCount}
-          draftCount={draft.length}
-          onApplyDraft={onApplyDraft}
-          onCreateSprint={onCreateSprint}
-          onCreateWorkspace={onCreateWorkspace}
-          onGenerateBacklog={onGenerateBacklog}
-          projectReady={projectReady}
-          reviewCount={reviewCount}
-          retroCount={retroCount}
-        />
-        {draft.length > 0 ? <DraftPreview draft={draft} /> : null}
+        {busy ? (
+          <article className="chat-bubble assistant chat-thinking">
+            <p>
+              <Loader2 className="animate-spin" size={14} /> {currentMeta?.role ?? "Agent"} is thinking…
+            </p>
+          </article>
+        ) : null}
       </div>
       <div className="chat-composer">
         <div className="composer-main">
-          <div className="prompt-test-bar">
-            <label>
-              <span>Prompt stage</span>
-              <select
-                aria-label="Prompt stage"
-                onChange={(event) => onPromptStageChange(event.target.value as PromptStage)}
-                value={promptStage}
-              >
-                {promptStageOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="prompt-test-button" disabled={busy} onClick={onTestPrompt} type="button">
-              <Play size={14} />
-              Test prompt
-            </button>
-          </div>
           <textarea
-            aria-label="AI chat prompt"
+            aria-label="Message the product agent"
             onChange={(event) => onPromptChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (!busy) onSend();
+              }
+            }}
             placeholder={placeholder}
             value={prompt}
           />
         </div>
         <button
-          aria-label="Generate backlog"
+          aria-label="Send to product agent"
           className="send-button"
-          disabled={busy || !projectReady}
-          onClick={onGenerateBacklog}
+          disabled={busy}
+          onClick={onSend}
           type="button"
         >
           {busy ? <Loader2 className="animate-spin" size={22} /> : <Send size={23} />}
@@ -1043,129 +1026,24 @@ function ChatView({
   );
 }
 
-function FlowPanel({
-  activeSprint,
-  backlogCount,
-  busy,
-  completedCount,
-  draftCount,
-  onApplyDraft,
-  onCreateSprint,
-  onCreateWorkspace,
-  onGenerateBacklog,
-  projectReady,
-  reviewCount,
-  retroCount,
-}: {
-  activeSprint?: Sprint;
-  backlogCount: number;
-  busy: boolean;
-  completedCount: number;
-  draftCount: number;
-  onApplyDraft: () => void;
-  onCreateSprint: () => void;
-  onCreateWorkspace: () => void;
-  onGenerateBacklog: () => void;
-  projectReady: boolean;
-  reviewCount: number;
-  retroCount: number;
-}) {
-  const steps = [
-    {
-      title: "1. Create workspace",
-      detail: projectReady ? "Workspace API is ready" : "Create a real persistent workspace first",
-      done: projectReady,
-      action: !projectReady ? { label: "Create", icon: Plus, onClick: onCreateWorkspace, disabled: busy } : undefined,
-    },
-    {
-      title: "2. Capture requirements",
-      detail: "Describe product goals, team constraints, and technical boundaries in chat",
-      done: projectReady,
-    },
-    {
-      title: "3. Draft Product Backlog",
-      detail: draftCount > 0 ? `${draftCount} draft items waiting` : "AI returns a structured backlog proposal",
-      done: draftCount > 0 || backlogCount > 0,
-      action:
-        projectReady && draftCount === 0
-          ? { label: "Generate", icon: Sparkles, onClick: onGenerateBacklog, disabled: busy }
-          : undefined,
-    },
-    {
-      title: "4. Apply to Product Backlog",
-      detail: backlogCount > 0 ? `${backlogCount} backlog items persisted` : "Confirm and write into the persistent API",
-      done: backlogCount > 0,
-      action:
-        draftCount > 0
-          ? { label: "Apply", icon: Check, onClick: onApplyDraft, disabled: busy }
-          : undefined,
-    },
-    {
-      title: "5. Create Sprint Backlog",
-      detail: activeSprint ? `${activeSprint.name} is active` : "Build a sprint from the highest-priority backlog",
-      done: Boolean(activeSprint),
-      action:
-        backlogCount > 0 && !activeSprint
-          ? { label: "Create Sprint", icon: ArrowRight, onClick: onCreateSprint, disabled: busy }
-          : undefined,
-    },
-    {
-      title: "6. Review / Retro",
-      detail:
-        reviewCount + retroCount > 0
-          ? `${reviewCount} review / ${retroCount} retro saved`
-          : completedCount > 0
-            ? "Save review notes in the Scrum view after tasks are done"
-            : "Turn delivery results into review learning",
-      done: reviewCount + retroCount > 0,
-    },
-  ];
-
+function StageProgress({ session }: { session: AgentSessionState }) {
   return (
-    <section className="flow-panel" aria-label="AI Scrum six step subflow">
-      <div className="flow-panel-title">
-        <Sparkles size={17} />
-        <h2>6-step Scrum subflow inside AI chat</h2>
-      </div>
-      <div className="flow-steps">
-        {steps.map((step) => (
-          <div className={`flow-step ${step.done ? "done" : ""}`} key={step.title}>
-            <span className="step-dot">{step.done ? <CheckCircle2 size={16} /> : <Clock3 size={15} />}</span>
-            <div>
-              <h3>{step.title}</h3>
-              <p>{step.detail}</p>
-            </div>
-            {step.action ? (
-              <button
-                className="mini-action"
-                disabled={step.action.disabled}
-                onClick={step.action.onClick}
-                type="button"
-              >
-                <step.action.icon size={14} />
-                {step.action.label}
-              </button>
-            ) : null}
+    <nav aria-label="Six-stage agent progress" className="stage-progress">
+      {agentStageMeta.map((stage, index) => {
+        const isDone = session.completedStages.includes(stage.value);
+        const isCurrent = session.stage === stage.value;
+        return (
+          <div
+            className={`stage-progress-chip ${isCurrent ? "is-current" : ""} ${isDone ? "is-done" : ""}`}
+            key={stage.value}
+            title={stage.role}
+          >
+            <span className="stage-progress-dot">{isDone ? <Check size={12} /> : index + 1}</span>
+            <span className="stage-progress-label">{stage.label.split(" · ")[1]}</span>
           </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function DraftPreview({ draft }: { draft: BacklogDraft[] }) {
-  return (
-    <section className="draft-preview">
-      <h2>Pending AI Proposal</h2>
-      <div className="draft-list">
-        {draft.map((item) => (
-          <article className="draft-row" key={item.title}>
-            <h3>{item.title}</h3>
-            <p>{item.userStory}</p>
-          </article>
-        ))}
-      </div>
-    </section>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -1188,14 +1066,16 @@ function BacklogsView({
   onOpenBacklogItem: (item: BacklogItem) => void;
   readyForSprint: BacklogItem[];
 }) {
+  const coarseItems = backlog.filter((item) => !item.technicalSpec);
+  const speccedItems = backlog.filter((item) => Boolean(item.technicalSpec));
   return (
     <section className="backlog-board">
       <BoardColumn
         action={null}
-        empty="Applied AI drafts will appear here."
+        empty="Step 3 nodes confirmed in the agent chat will appear here."
         title="Product Backlog"
       >
-        {backlog.map((item) => (
+        {coarseItems.map((item) => (
           <BacklogCard item={item} key={item.id} onOpen={onOpenBacklogItem} />
         ))}
       </BoardColumn>
@@ -1206,14 +1086,14 @@ function BacklogsView({
             <ActionButton disabled={busy} icon={Check} label="Apply Draft" onClick={onApplyDraft} />
           ) : null
         }
-        empty="Pending AI drafts or priority-sorted sprint candidates appear here."
+        empty="Items refined with an executable spec in Step 4 appear here."
         title="Scrum Backlog"
       >
         {draft.length > 0
           ? draft.map((item) => <DraftCard item={item} key={item.title} />)
-          : readyForSprint
-              .slice(0, 6)
-              .map((item) => <BacklogCard compact item={item} key={item.id} onOpen={onOpenBacklogItem} />)}
+          : speccedItems.map((item) => (
+              <BacklogCard compact item={item} key={item.id} onOpen={onOpenBacklogItem} />
+            ))}
       </BoardColumn>
 
       <BoardColumn
@@ -1256,6 +1136,7 @@ function BoardColumn({
 
 function ScrumView({
   activeSprint,
+  backlog,
   burndown,
   busy,
   onSaveReviewRetro,
@@ -1269,6 +1150,7 @@ function ScrumView({
   totalRemaining,
 }: {
   activeSprint?: Sprint;
+  backlog: BacklogItem[];
   burndown: Burndown | null;
   busy: boolean;
   onSaveReviewRetro: () => void;
@@ -1281,6 +1163,8 @@ function ScrumView({
   setRetroText: (value: string) => void;
   totalRemaining: number;
 }) {
+  const bandFor = (item: SprintItem): PriorityBand | undefined =>
+    backlog.find((candidate) => candidate.id === item.productBacklogItemId)?.priorityBand;
   return (
     <section className="scrum-grid">
       <section className="sprint-panel">
@@ -1299,7 +1183,7 @@ function ScrumView({
             </div>
             <div className="sprint-list">
               {activeSprint.items.map((item) => (
-                <SprintTaskRow busy={busy} item={item} key={item.id} onUpdateTask={onUpdateTask} />
+                <SprintTaskRow band={bandFor(item)} busy={busy} item={item} key={item.id} onUpdateTask={onUpdateTask} />
               ))}
             </div>
           </>
@@ -1380,10 +1264,12 @@ function ReviewRetroPanel({
 }
 
 function SprintTaskRow({
+  band,
   busy,
   item,
   onUpdateTask,
 }: {
+  band?: PriorityBand;
   busy: boolean;
   item: SprintItem;
   onUpdateTask: (item: SprintItem, statusValue: SprintItemStatus) => void;
@@ -1396,6 +1282,7 @@ function SprintTaskRow({
         <p>{item.doneCondition}</p>
       </div>
       <div className="sprint-row-actions">
+        {band ? <span className={`moscow-chip moscow-${band.toLowerCase()}`}>{moscowLabel(band)}</span> : null}
         <span className={`status-pill status-${item.status.toLowerCase()}`}>{item.status}</span>
         {item.status !== "Done" ? (
           <>
@@ -1431,7 +1318,7 @@ function BacklogCard({
     >
       <div className="artifact-head">
         <span className={priorityClass(item.priorityBand)}>
-          {item.priorityBand} / {item.priorityScore}
+          {moscowLabel(item.priorityBand)} · {item.priorityBand}
         </span>
         <span className="status-pill">{item.status}</span>
       </div>
@@ -1633,6 +1520,28 @@ function BacklogDetailDrawer({
             <h3>Developer Summary</h3>
             <p>{doc?.summary ?? item.userStory}</p>
           </section>
+
+          {item.technicalSpec ? (
+            <section className="drawer-section">
+              <h3>Build Blueprint (Step 4)</h3>
+              <pre style={{ whiteSpace: "pre-wrap" }}>{item.technicalSpec}</pre>
+            </section>
+          ) : null}
+
+          {item.codingPrompt ? (
+            <section className="drawer-section">
+              <h3>AI Coding Prompt</h3>
+              <p className="drawer-hint">Paste this into Cursor / Claude Code to build the feature.</p>
+              <pre style={{ whiteSpace: "pre-wrap" }}>{item.codingPrompt}</pre>
+              <button
+                className="copy-prompt-button"
+                onClick={() => navigator.clipboard.writeText(item.codingPrompt ?? "")}
+                type="button"
+              >
+                Copy prompt
+              </button>
+            </section>
+          ) : null}
 
           {doc?.sections.map((section) => (
             <section className="drawer-section" key={section.title}>

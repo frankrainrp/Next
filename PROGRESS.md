@@ -1,19 +1,32 @@
 # Progress
 
-Date reset: 2026-06-08
+Date reset: 2026-06-08 · Product Agent rework started: 2026-06-10
 
-Current product direction: **ai product manager**, an AI product-manager assistant that gives Scrum-based development guidance to design, architecture, and development teams.
+Current product direction: **Product Agent — AI Product Manager for Solo SaaS Builders**. The user
+chats with one stateful agent (LangChain orchestration + Exa MCP web search) that walks
+Idea Intake & Founder Fit → Customer/Problem/Positioning → MVP Scope & Feature Architecture →
+Build Blueprint (data model + pages + AI coding prompts) → Development Roadmap →
+Delivery/Tracking/Iteration, writing artifacts (Product/Scrum/Sprint Backlog, Burndown,
+per-feature Cursor/Claude-Code prompts) through tools as each stage is confirmed.
+Source of truth: `docs/product-agent-overview.md` + `docs/saas-blueprint-framework.md`.
 
-## Current Status
+## Current Status (2026-06-10)
 
-The Scrum MVP is now a locally usable SaaS workflow, not a static demo page.
-
-Current implementation:
-
-- Next.js App Router UI with three working views: AI Chat, Backlogs, Scrum.
-- AI Chat keeps the 6-step Scrum builder as an in-chat subfunction.
-- Product Backlog, Scrum Backlog, Sprint Backlog, Burndown, Review, and Retro are wired to API routes.
-- Local dev persistence is server-side in `.data/scrum-store.json`.
+- The standalone 6-step Wizard view was REMOVED (component, page wiring, CSS). The six-stage flow
+  now lives in the conversational agent itself.
+- Runtime stage prompts are the English translations in `prompt/en/step1_*.md` … `step6_*.md`
+  (Chinese originals in `prompt/` are kept as source references).
+- New agent layer in `src/server/ai/`: `lc-models.ts` (DeepSeek primary + GPT-5.5 channel via
+  LangChain), `exa-search.ts` (Exa MCP tools, REST fallback), `agent-session.ts` (per-project stage
+  state machine persisted in `.data/agent-sessions.json`), `agent-tools.ts` (artifact-writing tools,
+  confirmation-gated), `six-stage-agent.ts` (ReAct orchestration).
+- New routes: `POST /api/agent/chat`, `GET/DELETE /api/agent/session`.
+- Chat UI talks to the real agent: stage progress chips, session restore, auto-creates a project on
+  first message. Boards refresh after every agent reply.
+- MoSCoW is mapped 1:1 onto priority bands and shown as colored chips:
+  Must=P0 red, Should=P1 orange, Could=P2 blue, Won't=P3 black/muted.
+- Requires `pnpm install` (new deps: @langchain/core, @langchain/openai, @langchain/langgraph,
+  @langchain/mcp-adapters) and `.env`: DEEPSEEK_API_KEY (+ optional OPENAI_API_KEY, EXA_API_KEY).
 - Prisma Scrum models and API schemas exist, but production Prisma services and auth are still pending.
 
 Required UI/UX direction:

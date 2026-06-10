@@ -66,13 +66,14 @@ Current local state: the MVP has a usable dev flow backed by `.data/scrum-store.
 
 - Product docs lead implementation.
 - Default UI is the dark Liquid Glass theme based on `UI_sample/纯CSS液态玻璃` with Instagram-like dark contrast. The old Vintage Analog / Retro Film sketch direction is preserved as the `Sketch` theme in the app.
-- UI layout should stay aligned with `UI/chat.png`, `UI/backlogs.png`, and `UI/scrum.png`; the 6-step Scrum flow belongs inside AI Chat.
+- UI layout should stay aligned with `UI/chat.png`, `UI/backlogs.png`, and `UI/scrum.png`; the six-stage flow lives inside the conversational Product Agent (the old standalone Wizard view was removed on 2026-06-10).
+- The Product Agent definition is `docs/product-agent-overview.md`: LangChain six-stage orchestration (`src/server/ai/six-stage-agent.ts`), Exa MCP web search, artifact tools gated on explicit user confirmation.
 - Every feature needs acceptance criteria before coding.
 - Every sprint feature should map back to a user story and a measurable done condition.
 - AI-proposed changes must be confirmed before mutating Scrum artifacts.
 - The six-stage MCP tools must follow `docs/mcp-six-stage-tools.md`; mutating MCP calls require explicit user confirmation and `confirmed: true`.
 - AI Chat prompt behavior must follow `docs/ai-chat-six-stage-prompts.md`.
-- Runtime stage prompts live in `prompt/step1_需求捕获.md` through `prompt/step6_持续跟踪.md`; `/api/ai/chat` selects them with `promptStage`.
+- Runtime stage prompts are the English files `prompt/en/step1_requirement_capture.md` through `prompt/en/step6_continuous_tracking.md` (Chinese originals in `prompt/` are source references). `/api/agent/chat` selects them from the per-project session stage; `/api/ai/chat` still accepts `promptStage`.
 - Priority changes must show system reasoning or a human override reason.
 - UI work must map to API contracts in `docs/api-contract.md`.
 - Backlog technical detail and Markdown export must stay API-backed, not page-only behavior.

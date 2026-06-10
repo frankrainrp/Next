@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "pnpm install --reporter=append-only && pnpm dev"],
+      "port": 3000
+    },
+    {
+      "name": "verify",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/verify-agent-flow.mjs"],
+      "port": 3999
+    },
+    {
+      "name": "chore",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "node scripts/chore-push.mjs && node scripts/port-keeper.mjs"],
+      "port": 3998
+    }
+  ]
+}
