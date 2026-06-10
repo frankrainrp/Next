@@ -1,6 +1,7 @@
 import { prisma } from "../db";
 import { randomUUID } from "node:crypto";
 import type { z } from "zod";
+import { getCurrentUserId, getCurrentUserIdOrNull } from "../auth/current-user";
 import { scorePriority } from "./priority";
 import type {
   ArtifactProposalRequestSchema,
@@ -143,21 +144,6 @@ function dateRange(startDate: string, endDate: string) {
     cursor.setDate(cursor.getDate() + 1);
   }
   return dates;
-}
-
-async function getDefaultOwnerId(): Promise<string> {
-  let user = await prisma.appUser.findFirst();
-  if (!user) {
-    user = await prisma.appUser.create({
-      data: {
-        clerkUserId: "mock_clerk_user",
-        email: "mock@example.com",
-        name: "Mock User",
-        timezone: "Asia/Shanghai",
-      },
-    });
-  }
-  return user.id;
 }
 
 function mapBacklogItem(pbi: any): BacklogItemRecord {
@@ -428,7 +414,11 @@ async function appendBurndownHistoryDb(sprintId: string, scopeChange = 0) {
 }
 
 export async function listProjects(): Promise<ProjectRecord[]> {
+  // Read-only: never create a user here (keeps crawler traffic zero-write).
+  const ownerId = await getCurrentUserIdOrNull();
+  if (!ownerId) return [];
   const projects = await prisma.project.findMany({
+    where: { ownerId },
     orderBy: { createdAt: "desc" },
     include: {
       backlogItems: true,
@@ -463,7 +453,7 @@ export async function getProjectSnapshot(projectId: string): Promise<ProjectReco
 }
 
 export async function createProject(input: CreateProjectInput): Promise<ProjectRecord> {
-  const ownerId = await getDefaultOwnerId();
+  const ownerId = await getCurrentUserId();
   const project = await prisma.project.create({
     data: {
       title: input.title,

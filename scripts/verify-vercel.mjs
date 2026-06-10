@@ -16,6 +16,23 @@
 
 const BASE = process.argv[2] || "http://localhost:3000";
 
+// Per-browser isolation means every request needs the SAME pm_uid cookie,
+// otherwise create + read land under different anonymous users. Capture the
+// cookie middleware sets on the first response and reuse it everywhere.
+let sessionCookie = "";
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async (url, init = {}) => {
+  const headers = new Headers(init.headers || {});
+  if (sessionCookie) headers.set("cookie", sessionCookie);
+  const res = await originalFetch(url, { ...init, headers });
+  const setCookie = res.headers.get("set-cookie");
+  if (setCookie && !sessionCookie) {
+    const match = setCookie.match(/pm_uid=[^;]+/);
+    if (match) sessionCookie = match[0];
+  }
+  return res;
+};
+
 let passed = 0;
 let failed = 0;
 
