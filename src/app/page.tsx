@@ -190,11 +190,11 @@ const promptPlaceholder =
   "Tell me what you want to build — even one vague sentence is enough to start.";
 
 const agentStageMeta: Array<{ value: PromptStage; label: string; role: string }> = [
-  { value: "step1", label: "1 · Intake", role: "Startup Intake Coach" },
-  { value: "step2", label: "2 · Customer", role: "Market & User Research Strategist" },
-  { value: "step3", label: "3 · MVP Scope", role: "Product Architect" },
-  { value: "step4", label: "4 · Blueprint", role: "Technical Blueprint Architect" },
-  { value: "step5", label: "5 · Roadmap", role: "Delivery Planner" },
+  { value: "step1", label: "1 · Intake", role: "Startup Intake Coach for Solo SaaS Builders" },
+  { value: "step2", label: "2 · Customer", role: "SaaS Market & User Research Strategist" },
+  { value: "step3", label: "3 · MVP Scope", role: "Product Architect for Micro-SaaS" },
+  { value: "step4", label: "4 · Blueprint", role: "Technical Blueprint Architect for Vibe Coding" },
+  { value: "step5", label: "5 · Roadmap", role: "Delivery Planner for Solo Builders" },
   { value: "step6", label: "6 · Track", role: "Delivery Coach & Growth Tracker" },
 ];
 

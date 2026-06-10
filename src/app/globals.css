@@ -321,23 +321,15 @@ button:focus-visible {
   min-height: 420px;
 }
 
-/* Six-stage agent progress (liquid glass chips) */
+/* Six-stage agent progress — frameless chip row (no exposed container outline) */
 .stage-progress {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 2px 0 0;
   margin-bottom: 14px;
-  border-radius: 18px;
-  border: 1px double var(--line-soft);
-  background: var(--glass-bg);
-  backdrop-filter: blur(8px);
-  box-shadow:
-    inset 2px -2px 1px -1px rgba(255, 255, 255, 0.35),
-    inset -2px 2px 1px -1px rgba(255, 255, 255, 0.35),
-    0 4px 12px rgba(0, 0, 0, 0.14);
 }
 
 .stage-progress-chip {
@@ -1585,7 +1577,6 @@ button:focus-visible {
 .sketch-stage[data-theme="liquid"] :is(
   .workspace-frame,
   .side-rail,
-  .workspace-topbar,
   .chat-bubble,
   .flow-panel,
   .draft-preview,
