@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     session: {
       stage: session.stage,
       completedStages: session.completedStages,
+      handoffs: session.handoffs,
       messages: session.messages,
     },
   });

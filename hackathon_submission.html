@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hackathon Submission: AI Product Manager</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333333;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    h1 {
+      font-size: 28px;
+      color: #111111;
+      border-bottom: 2px solid #eaeaea;
+      padding-bottom: 8px;
+      margin-top: 40px;
+    }
+    h2 {
+      font-size: 20px;
+      color: #222222;
+      border-bottom: 1px solid #eaeaea;
+      padding-bottom: 6px;
+      margin-top: 30px;
+    }
+    h3 {
+      font-size: 16px;
+      color: #333333;
+      margin-top: 20px;
+    }
+    p, li {
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    ul, ol {
+      margin-bottom: 20px;
+      padding-left: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #cccccc;
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #f5f5f5;
+      font-weight: bold;
+    }
+    hr {
+      border: 0;
+      border-top: 1px solid #eaeaea;
+      margin: 30px 0;
+    }
+    .meta-table td {
+      border: none;
+      padding: 4px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Hackathon Submission: AI Product Manager — Agent-Driven PRD &amp; Execution Engine</h1>
+
+  <h2>Document Metadata</h2>
+  <table class="meta-table" style="width: auto; margin: 10px 0;">
+    <tr>
+      <td style="font-weight: bold; padding-right: 20px;">Team Name:</td>
+      <td>circle</td>
+    </tr>
+    <tr>
+      <td style="font-weight: bold; padding-right: 20px;">GitHub Repository:</td>
+      <td><a href="https://github.com/frankrainrp/Next">https://github.com/frankrainrp/Next</a></td>
+    </tr>
+    <tr>
+      <td style="font-weight: bold; padding-right: 20px;">Live Demo URL:</td>
+      <td>[Insert Hosted URL Here]</td>
+    </tr>
+    <tr>
+      <td style="font-weight: bold; padding-right: 20px;">Submission Category:</td>
+      <td>Agentic Workflows &amp; Developer Tools</td>
+    </tr>
+  </table>
+
+  <hr>
+
+  <h2>1. Problem Statement</h2>
+  <p><strong>The "Vibe Coding" Context Drift:</strong></p>
+  <p>As solo developers and teams delegate massive execution blocks to AI coding assistants (such as Cursor, Claude Code, or Windsurf), a critical gap emerges: <strong>requirement drift</strong>.</p>
+  <ul>
+    <li><strong>Scattered Knowledge:</strong> Crucial product goals, edge cases, architectural decisions, and API agreements get buried in deep AI chat histories or temporary IDE context.</li>
+    <li><strong>Limited Memory:</strong> Standard AI agents operate within limited context windows and cannot preserve long-term product alignment as codebases scale.</li>
+    <li><strong>Loss of Engineering Control:</strong> Developers gradually lose track of how AI-generated modules interact with the original product roadmap, resulting in bloated scopes, broken critical paths, and wasted development cycles.</li>
+  </ul>
+
+  <hr>
+
+  <h2>2. Solution</h2>
+  <p><strong>AI Product Manager</strong> is a conversational 6-expert agent system that translates fuzzy product ideas into a structured, machine-readable Product Requirements Document (PRD), which is then compiled into a live Scrum board with capability-calibrated deadlines, dynamic progress telemetry, and auto-generated developer prompts.</p>
+  <p>By grounding all agent reasoning in a central database schema rather than chat context alone, it guarantees long-term project alignment for solo builders and teams.</p>
+
+  <hr>
+
+  <h2>3. Agent Architecture (6-Stage Pipeline)</h2>
+  <p>We built 6 specialized agents that orchestrate a sequential chain-of-thought pipeline. Each expert operates with a custom system prompt, discrete goals, and typed JSON handoffs.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Step</th>
+        <th>Agent / Expert Role</th>
+        <th>Primary Focus</th>
+        <th>Methodology &amp; Output Format</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>1</strong></td>
+        <td><strong>Senior Business Requirements Analyst</strong></td>
+        <td>Intent Capture</td>
+        <td>Extracts the core <strong>Intent Pair (Action + Purpose)</strong>. Uses funnel-type questioning to refine vague briefs; rejects assumptions and calibrates via analogy scenarios.</td>
+      </tr>
+      <tr>
+        <td><strong>2</strong></td>
+        <td><strong>Strategic Intelligence Analyst</strong></td>
+        <td>Task Profile</td>
+        <td>Builds a 4D Task Profile (<strong>Background, Constraints, Expected Outcome, Capability</strong>). Conducts BEI (Behavioral Event Interview) and Inference Chain stakeholder analysis.</td>
+      </tr>
+      <tr>
+        <td><strong>3</strong></td>
+        <td><strong>Chief Product Architect</strong></td>
+        <td>User Journey &amp; Backlog</td>
+        <td>Maps a linear User Journey and decomposes it into functional nodes. Categorizes the product backlog using strict <strong>MoSCoW</strong> prioritization (P0 to P3).</td>
+      </tr>
+      <tr>
+        <td><strong>4</strong></td>
+        <td><strong>Technical Solutions Architect</strong></td>
+        <td>Specs &amp; Technical Docs</td>
+        <td>Executes 3-round progressive elaboration (Requirements to Feasibility to Goal Alignment). Generates technical specs and ready-to-use Cursor/Claude Code system prompts.</td>
+      </tr>
+      <tr>
+        <td><strong>5</strong></td>
+        <td><strong>Senior Delivery Manager</strong></td>
+        <td>Scheduling &amp; Effort</td>
+        <td>Applies capability-calibrated estimation multipliers (Proficient: 0.8x, Basic: 1.2x, New: 1.5x) plus a mandatory <strong>20% buffer</strong>. Sequences milestones.</td>
+      </tr>
+      <tr>
+        <td><strong>6</strong></td>
+        <td><strong>Agile Delivery Coach</strong></td>
+        <td>Deviation-Driven Control</td>
+        <td>Continuous evaluation loop (triggers every 5% of sprint progress). Computes the <strong>Efficiency Index (EI)</strong> and applies dynamic adjustment paths to prevent delay.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <h2>4. Technical Specifications &amp; Tool Use</h2>
+
+  <h3>4.1 AI &amp; Agent Orchestration</h3>
+  <ul>
+    <li><strong>Primary LLM:</strong> DeepSeek V4 Series (<code>deepseek-v4-flash</code> for fast iterations, <code>deepseek-v4-pro</code> for deep reasoning/thinking paths).</li>
+    <li><strong>Fallback LLM:</strong> OpenAI models (seamless automatic failover routing).</li>
+    <li><strong>Validation:</strong> All LLM outputs are structured using JSON mode and strictly validated server-side using <strong>Zod schemas</strong> before database entry.</li>
+    <li><strong>Integration:</strong> Fully supports the <strong>Model Context Protocol (MCP)</strong> via a custom JSON-RPC <code>/api/mcp</code> endpoint to export these expert capabilities to external desktop tools.</li>
+  </ul>
+
+  <h3>4.2 Data &amp; Persistence</h3>
+  <ul>
+    <li><strong>Database Engine:</strong> PostgreSQL hosted on Serverless Neon DB.</li>
+    <li><strong>ORM:</strong> Prisma 7 with Native PG Driver Adapter (<code>@prisma/adapter-pg</code> + <code>pg</code> client pool).</li>
+    <li><strong>State Management:</strong> All project backlogs, sprint tasks, and agent session checkpoints reside entirely in the cloud database. The filesystem is kept completely stateless, allowing rapid, secure deployments.</li>
+  </ul>
+
+  <h3>4.3 Developer Handoff &amp; UI/UX</h3>
+  <ul>
+    <li><strong>One-Click Markdown Export:</strong> Generates clean project briefs, functional specifications, and developer system prompts pre-formatted for Cursor, Windsurf, or Claude Code.</li>
+    <li><strong>UI Themes:</strong> Features a sleek dark <strong>Liquid Glass</strong> layout (custom CSS glassmorphism, responsive grids, and micro-interactions) with a switchable retro <strong>Sketch</strong> theme for paper-analog lovers.</li>
+    <li><strong>Scrum Workspace:</strong> Embeds a live Kanban board, sprint logs, and a dynamic mathematical <strong>Burndown Chart</strong> (utilizing projected remaining effort to estimate true sprint completion trends).</li>
+  </ul>
+
+  <hr>
+
+  <h2>5. Scoring &amp; Evaluation Alignment</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Hackathon Evaluation Criteria</th>
+        <th>How We Address It</th>
+        <th>Proof in Codebase</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Agent Autonomy &amp; Intelligence</strong></td>
+        <td>6 distinct specialist agents executing complex reasoning loops (funneling, BEI interviews, MoSCoW mapping).</td>
+        <td>Check <code>src/server/ai/stage-prompts.ts</code> and ReAct patterns in <code>src/server/ai/six-stage-agent.ts</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>Fail-Safe Orchestration</strong></td>
+        <td>Strict typed JSON handoffs between agent sessions. Auto-fallback architecture for API provider dropouts.</td>
+        <td>Controlled state transitions in <code>src/server/ai/agent-session.ts</code> and fallback wrappers.</td>
+      </tr>
+      <tr>
+        <td><strong>Human-in-the-Loop Control</strong></td>
+        <td>AI proposals are generated as "Pending" drafts. The user must explicitly approve before changes write to the backlog.</td>
+        <td>Check schema states in <code>prisma/schema.prisma</code> and approval gates in <code>src/server/scrum/store.ts</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>System Reliability</strong></td>
+        <td>Complete schema validation and migration away from ephemeral local JSON files to Neon Cloud Postgres.</td>
+        <td>Prisma 7 adapter initialization in <code>src/server/db.ts</code> and Next.js static collection success.</td>
+      </tr>
+    </tbody>
+  </table>
+
+</body>
+</html>

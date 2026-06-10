@@ -1,5 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { prisma } from "../db";
 import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import { scorePriority } from "./priority";
@@ -131,40 +130,240 @@ export type ProjectRecord = {
   proposals: ProposalRecord[];
 };
 
-type StoreData = {
-  projects: ProjectRecord[];
-};
-
-const storePath = path.join(process.cwd(), ".data", "scrum-store.json");
-
-async function readStore(): Promise<StoreData> {
-  try {
-    const raw = await readFile(storePath, "utf8");
-    return JSON.parse(raw) as StoreData;
-  } catch {
-    return { projects: [] };
-  }
-}
-
-async function writeStore(data: StoreData) {
-  await mkdir(path.dirname(storePath), { recursive: true });
-  await writeFile(storePath, JSON.stringify(data, null, 2), "utf8");
-}
-
-function now() {
-  return new Date().toISOString();
-}
-
 function dayKey(input = new Date()) {
   return input.toISOString().slice(0, 10);
 }
 
-function getProject(data: StoreData, projectId: string) {
-  const project = data.projects.find((item) => item.id === projectId);
-  if (!project) {
-    throw new Error("PROJECT_NOT_FOUND");
+function dateRange(startDate: string, endDate: string) {
+  const dates: string[] = [];
+  const cursor = new Date(startDate);
+  const end = new Date(endDate);
+  while (cursor <= end) {
+    dates.push(dayKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
   }
-  return project;
+  return dates;
+}
+
+async function getDefaultOwnerId(): Promise<string> {
+  let user = await prisma.appUser.findFirst();
+  if (!user) {
+    user = await prisma.appUser.create({
+      data: {
+        clerkUserId: "mock_clerk_user",
+        email: "mock@example.com",
+        name: "Mock User",
+        timezone: "Asia/Shanghai",
+      },
+    });
+  }
+  return user.id;
+}
+
+function mapBacklogItem(pbi: any): BacklogItemRecord {
+  return {
+    id: pbi.id,
+    title: pbi.title,
+    userStory: pbi.userStory,
+    problem: pbi.problem,
+    acceptanceCriteria: Array.isArray(pbi.acceptanceCriteria)
+      ? pbi.acceptanceCriteria
+      : typeof pbi.acceptanceCriteria === "string"
+        ? JSON.parse(pbi.acceptanceCriteria)
+        : [],
+    status: pbi.status,
+    priorityBand: pbi.priorityBand,
+    priorityScore: pbi.priorityScore,
+    priorityExplanation: pbi.priorityExplanation,
+    effort: pbi.effort,
+    risk: pbi.risk ?? undefined,
+    dependencies: Array.isArray(pbi.dependencyJson)
+      ? pbi.dependencyJson
+      : typeof pbi.dependencyJson === "string"
+        ? JSON.parse(pbi.dependencyJson)
+        : [],
+    source: pbi.source,
+    technicalSpec: pbi.technicalSpec ?? undefined,
+    codingPrompt: pbi.codingPrompt ?? undefined,
+    createdAt: pbi.createdAt.toISOString(),
+    updatedAt: pbi.updatedAt.toISOString(),
+  };
+}
+
+function mapSprintItem(item: any): SprintItemRecord {
+  return {
+    id: item.id,
+    productBacklogItemId: item.productBacklogItemId ?? undefined,
+    task: item.task,
+    owner: item.owner ?? undefined,
+    status: item.status,
+    initialEffort: item.initialEffort,
+    remainingEffort: item.remainingEffort,
+    doneCondition: item.doneCondition,
+    blocker: item.blocker ?? undefined,
+    targetDate: item.targetDate ? item.targetDate.toISOString() : undefined,
+    evidenceLink: item.evidenceLink ?? undefined,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  };
+}
+
+function mapIncrement(inc: any): IncrementRecord {
+  return {
+    id: inc.id,
+    productBacklogItemId: inc.productBacklogItemId,
+    sprintId: inc.sprintId,
+    deliverable: inc.deliverable,
+    acceptanceEvidence: Array.isArray(inc.acceptanceEvidence)
+      ? inc.acceptanceEvidence
+      : typeof inc.acceptanceEvidence === "string"
+        ? JSON.parse(inc.acceptanceEvidence)
+        : [],
+    qaStatus: inc.qaStatus,
+    demoNotes: inc.demoNotes ?? undefined,
+    reviewDecision: inc.reviewDecision,
+    followUpItems: Array.isArray(inc.followUpJson)
+      ? inc.followUpJson
+      : typeof inc.followUpJson === "string"
+        ? JSON.parse(inc.followUpJson)
+        : [],
+    createdAt: inc.createdAt.toISOString(),
+    updatedAt: inc.updatedAt.toISOString(),
+  };
+}
+
+function mapSprint(spr: any, burndownPoints: any[]): SprintRecord {
+  return {
+    id: spr.id,
+    sprintNumber: spr.sprintNumber,
+    name: spr.name,
+    goal: spr.goal,
+    startDate: spr.startDate.toISOString(),
+    endDate: spr.endDate.toISOString(),
+    status: spr.status,
+    workingDays: Array.isArray(spr.workingDaysJson)
+      ? spr.workingDaysJson
+      : typeof spr.workingDaysJson === "string"
+        ? JSON.parse(spr.workingDaysJson)
+        : [],
+    items: (spr.items ?? []).map(mapSprintItem),
+    increments: (spr.increments ?? []).map(mapIncrement),
+    burndownHistory: (burndownPoints ?? []).map((pt: any) => ({
+      date: pt.date.toISOString().slice(0, 10),
+      actualRemaining: pt.actualRemaining,
+      blockedCount: pt.blockedCount,
+      scopeChange: pt.scopeChange,
+    })),
+    createdAt: spr.createdAt.toISOString(),
+    updatedAt: spr.updatedAt.toISOString(),
+  };
+}
+
+function mapReview(rev: any): ReviewRecord {
+  return {
+    id: rev.id,
+    sprintId: rev.sprintId,
+    demoOutcome: rev.demoOutcome,
+    acceptedItems: Array.isArray(rev.acceptedItemsJson)
+      ? rev.acceptedItemsJson
+      : typeof rev.acceptedItemsJson === "string"
+        ? JSON.parse(rev.acceptedItemsJson)
+        : [],
+    followUpItems: Array.isArray(rev.followUpItemsJson)
+      ? rev.followUpItemsJson
+      : typeof rev.followUpItemsJson === "string"
+        ? JSON.parse(rev.followUpItemsJson)
+        : [],
+    stakeholderFeedback: rev.stakeholderFeedback ?? undefined,
+    backlogChanges: Array.isArray(rev.backlogChangesJson)
+      ? rev.backlogChangesJson
+      : typeof rev.backlogChangesJson === "string"
+        ? JSON.parse(rev.backlogChangesJson)
+        : [],
+    createdAt: rev.createdAt.toISOString(),
+    updatedAt: rev.updatedAt.toISOString(),
+  };
+}
+
+function mapRetro(ret: any): RetroRecord {
+  return {
+    id: ret.id,
+    sprintId: ret.sprintId,
+    whatWorked: Array.isArray(ret.whatWorked)
+      ? ret.whatWorked
+      : typeof ret.whatWorked === "string"
+        ? JSON.parse(ret.whatWorked)
+        : [],
+    whatDidNotWork: Array.isArray(ret.whatDidNotWork)
+      ? ret.whatDidNotWork
+      : typeof ret.whatDidNotWork === "string"
+        ? JSON.parse(ret.whatDidNotWork)
+        : [],
+    rootCause: ret.rootCause ?? undefined,
+    experiment: ret.experiment ?? undefined,
+    actionItems: Array.isArray(ret.actionItemsJson)
+      ? ret.actionItemsJson
+      : typeof ret.actionItemsJson === "string"
+        ? JSON.parse(ret.actionItemsJson)
+        : [],
+    createdAt: ret.createdAt.toISOString(),
+    updatedAt: ret.updatedAt.toISOString(),
+  };
+}
+
+function mapProposal(prop: any): ProposalRecord {
+  return {
+    id: prop.id,
+    type: prop.type,
+    rationale: prop.rationale,
+    payload: typeof prop.payloadJson === "string"
+      ? JSON.parse(prop.payloadJson)
+      : prop.payloadJson,
+    status: prop.status,
+    createdAt: prop.createdAt.toISOString(),
+    updatedAt: prop.updatedAt.toISOString(),
+  };
+}
+
+async function mapProject(proj: any): Promise<ProjectRecord> {
+  const reviews = await prisma.sprintReview.findMany({
+    where: { sprint: { projectId: proj.id } },
+    orderBy: { createdAt: "desc" },
+  });
+  const retros = await prisma.sprintRetro.findMany({
+    where: { sprint: { projectId: proj.id } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const sprintsWithBurndown = await Promise.all(
+    (proj.sprints ?? []).map(async (spr: any) => {
+      const burndownPoints = await prisma.burndownPoint.findMany({
+        where: { sprintId: spr.id },
+        orderBy: { date: "asc" },
+      });
+      return mapSprint(spr, burndownPoints);
+    })
+  );
+
+  return {
+    id: proj.id,
+    title: proj.title,
+    action: proj.action,
+    purpose: proj.purpose,
+    timezone: proj.timezone,
+    context: proj.contextJson
+      ? typeof proj.contextJson === "string"
+        ? JSON.parse(proj.contextJson)
+        : proj.contextJson
+      : undefined,
+    createdAt: proj.createdAt.toISOString(),
+    updatedAt: proj.updatedAt.toISOString(),
+    backlog: (proj.backlogItems ?? []).map(mapBacklogItem),
+    sprints: sprintsWithBurndown,
+    reviews: reviews.map(mapReview),
+    retros: retros.map(mapRetro),
+    proposals: (proj.proposals ?? []).map(mapProposal),
+  };
 }
 
 function scoreFromBacklogInput(input: CreateBacklogItemInput) {
@@ -193,220 +392,323 @@ function scoreFromBacklogInput(input: CreateBacklogItemInput) {
   };
 }
 
-function sprintRemaining(sprint: SprintRecord) {
-  return sprint.items.reduce((sum, item) => sum + item.remainingEffort, 0);
+async function appendBurndownHistoryDb(sprintId: string, scopeChange = 0) {
+  const sprint = await prisma.scrumSprint.findUnique({
+    where: { id: sprintId },
+    include: { items: true },
+  });
+  if (!sprint) return;
+
+  const actualRemaining = sprint.items.reduce((sum: number, item: any) => sum + item.remainingEffort, 0);
+  const blockedCount = sprint.items.filter((item: any) => item.status === "Blocked").length;
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  await prisma.burndownPoint.upsert({
+    where: {
+      sprintId_date: {
+        sprintId,
+        date: today,
+      },
+    },
+    update: {
+      actualRemaining,
+      blockedCount,
+      scopeChange: { increment: scopeChange },
+    },
+    create: {
+      sprintId,
+      date: today,
+      actualRemaining,
+      blockedCount,
+      scopeChange,
+      idealRemaining: 0,
+    },
+  });
 }
 
-function sprintBlockedCount(sprint: SprintRecord) {
-  return sprint.items.filter((item) => item.status === "Blocked").length;
+export async function listProjects(): Promise<ProjectRecord[]> {
+  const projects = await prisma.project.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      backlogItems: true,
+      sprints: {
+        include: {
+          items: true,
+          increments: true,
+        },
+      },
+      proposals: true,
+    },
+  });
+  return Promise.all(projects.map(mapProject));
 }
 
-function appendBurndownHistory(sprint: SprintRecord, scopeChange = 0) {
-  const point = {
-    date: dayKey(),
-    actualRemaining: sprintRemaining(sprint),
-    blockedCount: sprintBlockedCount(sprint),
-    scopeChange,
-  };
-  const existingIndex = sprint.burndownHistory.findIndex((item) => item.date === point.date);
-  if (existingIndex >= 0) {
-    sprint.burndownHistory[existingIndex] = point;
-  } else {
-    sprint.burndownHistory.push(point);
-  }
+export async function getProjectSnapshot(projectId: string): Promise<ProjectRecord> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: {
+      backlogItems: true,
+      sprints: {
+        include: {
+          items: true,
+          increments: true,
+        },
+      },
+      proposals: true,
+    },
+  });
+  if (!project) throw new Error("PROJECT_NOT_FOUND");
+  return mapProject(project);
 }
 
-function dateRange(startDate: string, endDate: string) {
-  const dates: string[] = [];
-  const cursor = new Date(startDate);
-  const end = new Date(endDate);
-  while (cursor <= end) {
-    dates.push(dayKey(cursor));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return dates;
+export async function createProject(input: CreateProjectInput): Promise<ProjectRecord> {
+  const ownerId = await getDefaultOwnerId();
+  const project = await prisma.project.create({
+    data: {
+      title: input.title,
+      action: input.action,
+      purpose: input.purpose,
+      timezone: input.timezone,
+      contextJson: input.context ? (input.context as any) : undefined,
+      ownerId,
+    },
+    include: {
+      backlogItems: true,
+      sprints: {
+        include: {
+          items: true,
+          increments: true,
+        },
+      },
+      proposals: true,
+    },
+  });
+  return mapProject(project);
 }
 
-export async function listProjects() {
-  const data = await readStore();
-  return data.projects;
+export async function listBacklog(projectId: string): Promise<BacklogItemRecord[]> {
+  const items = await prisma.productBacklogItem.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "asc" },
+  });
+  return items.map(mapBacklogItem);
 }
 
-export async function getProjectSnapshot(projectId: string) {
-  const data = await readStore();
-  return getProject(data, projectId);
-}
-
-export async function createProject(input: CreateProjectInput) {
-  const data = await readStore();
-  const timestamp = now();
-  const project: ProjectRecord = {
-    id: `proj_${randomUUID()}`,
-    title: input.title,
-    action: input.action,
-    purpose: input.purpose,
-    timezone: input.timezone,
-    context: input.context,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    backlog: [],
-    sprints: [],
-    reviews: [],
-    retros: [],
-    proposals: [],
-  };
-  data.projects.unshift(project);
-  await writeStore(data);
-  return project;
-}
-
-export async function listBacklog(projectId: string) {
-  const data = await readStore();
-  return getProject(data, projectId).backlog;
-}
-
-export async function createBacklogItem(projectId: string, input: CreateBacklogItemInput) {
-  const data = await readStore();
-  const project = getProject(data, projectId);
+export async function createBacklogItem(projectId: string, input: CreateBacklogItemInput): Promise<BacklogItemRecord> {
   const priority = scoreFromBacklogInput(input);
-  const timestamp = now();
-  const item: BacklogItemRecord = {
-    id: `pbi_${randomUUID()}`,
-    title: input.title,
-    userStory: input.userStory,
-    problem: input.problem,
-    acceptanceCriteria: input.acceptanceCriteria,
-    status: input.status,
-    priorityBand: priority.priorityBand,
-    priorityScore: priority.finalScore,
-    priorityExplanation: priority.explanation,
-    effort: input.effort,
-    risk: input.risk,
-    dependencies: input.dependencies,
-    source: input.source,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  project.backlog.push(item);
-  project.updatedAt = timestamp;
-  await writeStore(data);
-  return item;
+  const item = await prisma.productBacklogItem.create({
+    data: {
+      projectId,
+      title: input.title,
+      userStory: input.userStory,
+      problem: input.problem,
+      acceptanceCriteria: input.acceptanceCriteria,
+      status: input.status,
+      priorityBand: priority.priorityBand,
+      priorityScore: priority.finalScore,
+      priorityExplanation: priority.explanation,
+      effort: input.effort,
+      risk: input.risk,
+      dependencyJson: input.dependencies,
+      source: input.source,
+    },
+  });
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { updatedAt: new Date() },
+  });
+  return mapBacklogItem(item);
 }
 
-export async function listSprints(projectId: string) {
-  const data = await readStore();
-  return getProject(data, projectId).sprints;
+export async function listSprints(projectId: string): Promise<SprintRecord[]> {
+  const sprints = await prisma.scrumSprint.findMany({
+    where: { projectId },
+    orderBy: { sprintNumber: "desc" },
+    include: {
+      items: true,
+      increments: true,
+    },
+  });
+  return Promise.all(
+    sprints.map(async (spr) => {
+      const burndownPoints = await prisma.burndownPoint.findMany({
+        where: { sprintId: spr.id },
+        orderBy: { date: "asc" },
+      });
+      return mapSprint(spr, burndownPoints);
+    })
+  );
 }
 
-export async function createSprint(projectId: string, input: CreateSprintInput) {
-  const data = await readStore();
-  const project = getProject(data, projectId);
-  const timestamp = now();
-  const selectedIds =
-    input.selectedBacklogItemIds.length > 0
-      ? input.selectedBacklogItemIds
-      : project.backlog
-          .filter((item) => item.status === "Ready" || item.status === "Idea")
-          .sort((a, b) => b.priorityScore - a.priorityScore)
-          .slice(0, 4)
-          .map((item) => item.id);
-  const selectedItems = project.backlog.filter((item) => selectedIds.includes(item.id));
-  const sprint: SprintRecord = {
-    id: `spr_${randomUUID()}`,
-    sprintNumber: input.sprintNumber,
-    name: input.name,
-    goal: input.goal,
-    startDate: input.startDate,
-    endDate: input.endDate,
-    status: "Active",
-    workingDays: input.workingDays,
-    items: selectedItems.map((item) => ({
-      id: `task_${randomUUID()}`,
-      productBacklogItemId: item.id,
-      task: item.title,
-      owner: "Unassigned",
-      status: "Todo",
-      initialEffort: item.effort,
-      remainingEffort: item.effort,
-      doneCondition: item.acceptanceCriteria.join("; "),
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })),
-    increments: [],
-    burndownHistory: [],
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  for (const item of selectedItems) {
-    item.status = "Selected";
-    item.updatedAt = timestamp;
+export async function createSprint(projectId: string, input: CreateSprintInput): Promise<SprintRecord> {
+  let selectedIds = input.selectedBacklogItemIds;
+  if (!selectedIds || selectedIds.length === 0) {
+    const readyItems = await prisma.productBacklogItem.findMany({
+      where: {
+        projectId,
+        status: { in: ["Ready", "Idea"] },
+      },
+      orderBy: { priorityScore: "desc" },
+      take: 4,
+    });
+    selectedIds = readyItems.map((item) => item.id);
   }
-  appendBurndownHistory(sprint);
-  project.sprints.unshift(sprint);
-  project.updatedAt = timestamp;
-  await writeStore(data);
-  return sprint;
+
+  const selectedItems = await prisma.productBacklogItem.findMany({
+    where: { id: { in: selectedIds } },
+  });
+
+  const sprint = await prisma.scrumSprint.create({
+    data: {
+      projectId,
+      sprintNumber: input.sprintNumber,
+      name: input.name,
+      goal: input.goal,
+      startDate: new Date(input.startDate),
+      endDate: new Date(input.endDate),
+      status: "Active",
+      workingDaysJson: input.workingDays,
+      items: {
+        create: selectedItems.map((item) => ({
+          productBacklogItemId: item.id,
+          task: item.title,
+          owner: "Unassigned",
+          status: "Todo",
+          initialEffort: item.effort,
+          remainingEffort: item.effort,
+          doneCondition: Array.isArray(item.acceptanceCriteria)
+            ? item.acceptanceCriteria.join("; ")
+            : typeof item.acceptanceCriteria === "string"
+              ? item.acceptanceCriteria
+              : "",
+        })),
+      },
+    },
+    include: {
+      items: true,
+      increments: true,
+    },
+  });
+
+  await prisma.productBacklogItem.updateMany({
+    where: { id: { in: selectedIds } },
+    data: { status: "Selected", updatedAt: new Date() },
+  });
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { updatedAt: new Date() },
+  });
+
+  await appendBurndownHistoryDb(sprint.id);
+
+  const burndownPoints = await prisma.burndownPoint.findMany({
+    where: { sprintId: sprint.id },
+    orderBy: { date: "asc" },
+  });
+
+  return mapSprint(sprint, burndownPoints);
 }
 
 export async function updateSprintItem(projectId: string, sprintId: string, itemId: string, input: UpdateSprintItemInput) {
-  const data = await readStore();
-  const project = getProject(data, projectId);
-  const sprint = project.sprints.find((item) => item.id === sprintId);
-  if (!sprint) throw new Error("SPRINT_NOT_FOUND");
-  const item = sprint.items.find((task) => task.id === itemId);
-  if (!item) throw new Error("SPRINT_ITEM_NOT_FOUND");
-  const timestamp = now();
+  const existingItem = await prisma.sprintBacklogItem.findUnique({
+    where: { id: itemId },
+  });
+  if (!existingItem) throw new Error("SPRINT_ITEM_NOT_FOUND");
 
-  item.status = input.status ?? item.status;
-  item.remainingEffort = input.remainingEffort ?? item.remainingEffort;
-  item.blocker = input.blocker ?? item.blocker;
-  item.evidenceLink = input.evidenceLink ?? item.evidenceLink;
+  const updateData: any = {};
+  if (input.status !== undefined) updateData.status = input.status;
+  if (input.remainingEffort !== undefined) updateData.remainingEffort = input.remainingEffort;
+  if (input.blocker !== undefined) updateData.blocker = input.blocker;
+  if (input.evidenceLink !== undefined) updateData.evidenceLink = input.evidenceLink;
 
-  if (item.status === "Done") {
-    item.remainingEffort = 0;
-    const backlogItem = item.productBacklogItemId
-      ? project.backlog.find((candidate) => candidate.id === item.productBacklogItemId)
-      : undefined;
-    if (backlogItem) {
-      backlogItem.status = "Done";
-      backlogItem.updatedAt = timestamp;
-    }
-    const existingIncrement = sprint.increments.find((increment) => increment.productBacklogItemId === item.productBacklogItemId);
-    if (!existingIncrement && item.productBacklogItemId) {
-      sprint.increments.push({
-        id: `inc_${randomUUID()}`,
-        productBacklogItemId: item.productBacklogItemId,
-        sprintId,
-        deliverable: item.task,
-        acceptanceEvidence: [input.evidenceLink ?? "Marked done in Sprint Backlog"],
-        qaStatus: "Passed",
-        demoNotes: `Demo ${item.task}`,
-        reviewDecision: "Accepted",
-        followUpItems: [],
-        createdAt: timestamp,
-        updatedAt: timestamp,
+  if (input.status === "Done") {
+    updateData.remainingEffort = 0;
+  }
+
+  const updatedItem = await prisma.sprintBacklogItem.update({
+    where: { id: itemId },
+    data: updateData,
+  });
+
+  if (input.status === "Done" && existingItem.productBacklogItemId) {
+    await prisma.productBacklogItem.update({
+      where: { id: existingItem.productBacklogItemId },
+      data: { status: "Done", updatedAt: new Date() },
+    });
+
+    const existingInc = await prisma.incrementEvidence.findFirst({
+      where: { productBacklogItemId: existingItem.productBacklogItemId, sprintId },
+    });
+
+    if (!existingInc) {
+      await prisma.incrementEvidence.create({
+        data: {
+          sprintId,
+          productBacklogItemId: existingItem.productBacklogItemId,
+          deliverable: updatedItem.task,
+          acceptanceEvidence: [input.evidenceLink ?? "Marked done in Sprint Backlog"],
+          qaStatus: "Passed",
+          demoNotes: `Demo ${updatedItem.task}`,
+          reviewDecision: "Accepted",
+          followUpJson: [],
+        },
       });
     }
   }
 
-  item.updatedAt = timestamp;
-  sprint.updatedAt = timestamp;
-  project.updatedAt = timestamp;
-  appendBurndownHistory(sprint);
-  await writeStore(data);
-  return { sprint, item };
+  await appendBurndownHistoryDb(sprintId);
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { updatedAt: new Date() },
+  });
+
+  const sprint = await prisma.scrumSprint.findUnique({
+    where: { id: sprintId },
+    include: { items: true, increments: true },
+  });
+  if (!sprint) throw new Error("SPRINT_NOT_FOUND");
+
+  const burndownPoints = await prisma.burndownPoint.findMany({
+    where: { sprintId },
+    orderBy: { date: "asc" },
+  });
+
+  return {
+    sprint: mapSprint(sprint, burndownPoints),
+    item: mapSprintItem(updatedItem),
+  };
 }
 
 export async function getBurndown(projectId: string, sprintId: string) {
-  const data = await readStore();
-  const project = getProject(data, projectId);
-  const sprint = project.sprints.find((item) => item.id === sprintId);
+  const sprint = await prisma.scrumSprint.findUnique({
+    where: { id: sprintId },
+    include: { items: true },
+  });
   if (!sprint) throw new Error("SPRINT_NOT_FOUND");
 
-  const total = sprint.items.reduce((sum, item) => sum + item.initialEffort, 0);
-  const dates = dateRange(sprint.startDate, sprint.endDate);
+  const burndownPoints = await prisma.burndownPoint.findMany({
+    where: { sprintId },
+    orderBy: { date: "asc" },
+  });
+
+  const total = sprint.items.reduce((sum: number, item: any) => sum + item.initialEffort, 0);
+  const dates = dateRange(sprint.startDate.toISOString(), sprint.endDate.toISOString());
   const denominator = Math.max(dates.length - 1, 1);
-  const history = new Map(sprint.burndownHistory.map((point) => [point.date, point]));
+
+  const history = new Map(
+    burndownPoints.map((point) => [
+      point.date.toISOString().slice(0, 10),
+      {
+        actualRemaining: point.actualRemaining,
+        blockedCount: point.blockedCount,
+        scopeChange: point.scopeChange,
+      },
+    ])
+  );
+
   let latestActual = total;
   let latestBlockedCount = 0;
   const today = dayKey();
@@ -435,13 +737,15 @@ export async function getBurndown(projectId: string, sprintId: string) {
   });
 
   if (!points.some((point) => point.date === today)) {
+    const actualRemaining = sprint.items.reduce((sum: number, item: any) => sum + item.remainingEffort, 0);
+    const blockedCount = sprint.items.filter((item: any) => item.status === "Blocked").length;
     points.push({
       date: today,
       idealRemaining: 0,
-      actualRemaining: sprintRemaining(sprint),
-      projectedRemaining: sprintRemaining(sprint),
+      actualRemaining,
+      projectedRemaining: actualRemaining,
       scopeChange: 0,
-      blockedCount: sprintBlockedCount(sprint),
+      blockedCount,
     });
   }
 
@@ -452,67 +756,116 @@ export async function getBurndown(projectId: string, sprintId: string) {
   };
 }
 
-export async function listReviews(projectId: string) {
-  const data = await readStore();
-  return getProject(data, projectId).reviews;
+export async function listReviews(projectId: string): Promise<ReviewRecord[]> {
+  const reviews = await prisma.sprintReview.findMany({
+    where: { sprint: { projectId } },
+    orderBy: { createdAt: "desc" },
+  });
+  return reviews.map(mapReview);
 }
 
-export async function createReview(projectId: string, input: ReviewInput) {
-  const data = await readStore();
-  const project = getProject(data, projectId);
-  const timestamp = now();
-  const review = { ...input, id: `rev_${randomUUID()}`, createdAt: timestamp, updatedAt: timestamp };
-  project.reviews.unshift(review);
-  project.updatedAt = timestamp;
-  await writeStore(data);
-  return review;
+export async function createReview(projectId: string, input: ReviewInput): Promise<ReviewRecord> {
+  const review = await prisma.sprintReview.create({
+    data: {
+      sprintId: input.sprintId,
+      demoOutcome: input.demoOutcome,
+      acceptedItemsJson: input.acceptedItems,
+      followUpItemsJson: input.followUpItems,
+      stakeholderFeedback: input.stakeholderFeedback,
+      backlogChangesJson: input.backlogChanges,
+    },
+  });
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { updatedAt: new Date() },
+  });
+  return mapReview(review);
 }
 
-export async function listRetros(projectId: string) {
-  const data = await readStore();
-  return getProject(data, projectId).retros;
+export async function listRetros(projectId: string): Promise<RetroRecord[]> {
+  const retros = await prisma.sprintRetro.findMany({
+    where: { sprint: { projectId } },
+    orderBy: { createdAt: "desc" },
+  });
+  return retros.map(mapRetro);
 }
 
-export async function createRetro(projectId: string, input: RetroInput) {
-  const data = await readStore();
-  const project = getProject(data, projectId);
-  const timestamp = now();
-  const retro = { ...input, id: `retro_${randomUUID()}`, createdAt: timestamp, updatedAt: timestamp };
-  project.retros.unshift(retro);
-  project.updatedAt = timestamp;
-  await writeStore(data);
-  return retro;
+export async function createRetro(projectId: string, input: RetroInput): Promise<RetroRecord> {
+  const retro = await prisma.sprintRetro.create({
+    data: {
+      sprintId: input.sprintId,
+      whatWorked: input.whatWorked,
+      whatDidNotWork: input.whatDidNotWork,
+      rootCause: input.rootCause,
+      experiment: input.experiment,
+      actionItemsJson: input.actionItems,
+    },
+  });
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { updatedAt: new Date() },
+  });
+  return mapRetro(retro);
 }
 
-export async function listProposals(projectId: string) {
-  const data = await readStore();
-  return getProject(data, projectId).proposals;
+export async function listProposals(projectId: string): Promise<ProposalRecord[]> {
+  const proposals = await prisma.artifactProposal.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "desc" },
+  });
+  return proposals.map(mapProposal);
 }
 
-export async function createProposal(projectId: string, input: ProposalInput) {
-  const data = await readStore();
-  const project = getProject(data, projectId);
-  const timestamp = now();
-  const proposal: ProposalRecord = {
-    ...input,
-    id: `prop_${randomUUID()}`,
-    status: "Pending",
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  project.proposals.unshift(proposal);
-  project.updatedAt = timestamp;
-  await writeStore(data);
-  return proposal;
+export async function createProposal(projectId: string, input: ProposalInput): Promise<ProposalRecord> {
+  const proposal = await prisma.artifactProposal.create({
+    data: {
+      projectId,
+      type: input.type,
+      status: "Pending",
+      payloadJson: input.payload as any,
+      rationale: input.rationale,
+    },
+  });
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { updatedAt: new Date() },
+  });
+  return mapProposal(proposal);
 }
 
 export async function updateProjectContext(projectId: string, patch: Record<string, unknown>) {
-  const data = await readStore();
-  const project = getProject(data, projectId);
-  project.context = { ...(project.context ?? {}), ...patch };
-  project.updatedAt = now();
-  await writeStore(data);
-  return project;
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+  });
+  if (!project) throw new Error("PROJECT_NOT_FOUND");
+
+  const currentContext = project.contextJson
+    ? typeof project.contextJson === "string"
+      ? JSON.parse(project.contextJson)
+      : project.contextJson
+    : {};
+
+  const updatedContext = { ...currentContext, ...patch };
+
+  const updatedProject = await prisma.project.update({
+    where: { id: projectId },
+    data: {
+      contextJson: updatedContext as any,
+      updatedAt: new Date(),
+    },
+    include: {
+      backlogItems: true,
+      sprints: {
+        include: {
+          items: true,
+          increments: true,
+        },
+      },
+      proposals: true,
+    },
+  });
+
+  return mapProject(updatedProject);
 }
 
 export async function updateBacklogItem(
@@ -535,17 +888,39 @@ export async function updateBacklogItem(
       | "technicalSpec"
       | "codingPrompt"
     >
-  >,
+  >
 ) {
-  const data = await readStore();
-  const project = getProject(data, projectId);
-  const item = project.backlog.find((candidate) => candidate.id === itemId);
-  if (!item) throw new Error("BACKLOG_ITEM_NOT_FOUND");
-  Object.assign(item, patch);
-  item.updatedAt = now();
-  project.updatedAt = item.updatedAt;
-  await writeStore(data);
-  return item;
+  const existing = await prisma.productBacklogItem.findUnique({
+    where: { id: itemId },
+  });
+  if (!existing) throw new Error("BACKLOG_ITEM_NOT_FOUND");
+
+  const updateData: any = {};
+  if (patch.title !== undefined) updateData.title = patch.title;
+  if (patch.userStory !== undefined) updateData.userStory = patch.userStory;
+  if (patch.problem !== undefined) updateData.problem = patch.problem;
+  if (patch.acceptanceCriteria !== undefined) updateData.acceptanceCriteria = patch.acceptanceCriteria;
+  if (patch.status !== undefined) updateData.status = patch.status;
+  if (patch.priorityBand !== undefined) updateData.priorityBand = patch.priorityBand;
+  if (patch.priorityScore !== undefined) updateData.priorityScore = patch.priorityScore;
+  if (patch.priorityExplanation !== undefined) updateData.priorityExplanation = patch.priorityExplanation;
+  if (patch.effort !== undefined) updateData.effort = patch.effort;
+  if (patch.risk !== undefined) updateData.risk = patch.risk;
+  if (patch.dependencies !== undefined) updateData.dependencyJson = patch.dependencies;
+  if (patch.technicalSpec !== undefined) updateData.technicalSpec = patch.technicalSpec;
+  if (patch.codingPrompt !== undefined) updateData.codingPrompt = patch.codingPrompt;
+
+  const updated = await prisma.productBacklogItem.update({
+    where: { id: itemId },
+    data: updateData,
+  });
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { updatedAt: new Date() },
+  });
+
+  return mapBacklogItem(updated);
 }
 
 export function draftBacklogFromPrompt(prompt: string) {
@@ -554,9 +929,14 @@ export function draftBacklogFromPrompt(prompt: string) {
   const items = [
     {
       title: "Create a persistent SaaS workspace",
-      userStory: "As a product owner, I want each team to have an independent workspace so Scrum artifacts survive refreshes and stay attached to a real project.",
+      userStory:
+        "As a product owner, I want each team to have an independent workspace so Scrum artifacts survive refreshes and stay attached to a real project.",
       problem: "A demo-only page loses project state and cannot support continuous team delivery.",
-      acceptanceCriteria: ["A project can be created through the API", "Project data is persisted server-side", "The workspace reloads after a page refresh"],
+      acceptanceCriteria: [
+        "A project can be created through the API",
+        "Project data is persisted server-side",
+        "The workspace reloads after a page refresh",
+      ],
       status: "Ready" as const,
       effort: 3,
       risk: "Production rollout must define user, team, and project data boundaries.",
@@ -565,9 +945,14 @@ export function draftBacklogFromPrompt(prompt: string) {
     },
     {
       title: "Generate Product Backlog from AI chat",
-      userStory: "As a Scrum team, I want AI conversation output to become backlog items so planning can move from chat into execution.",
+      userStory:
+        "As a Scrum team, I want AI conversation output to become backlog items so planning can move from chat into execution.",
       problem: "Pure chat planning cannot be handed to developers as an actionable artifact.",
-      acceptanceCriteria: ["AI returns a structured backlog proposal", "Users can confirm and apply generated items", "Each item includes acceptance criteria and priority inputs"],
+      acceptanceCriteria: [
+        "AI returns a structured backlog proposal",
+        "Users can confirm and apply generated items",
+        "Each item includes acceptance criteria and priority inputs",
+      ],
       status: "Ready" as const,
       effort: 5,
       risk: "AI proposals must be user-confirmed before they mutate project data.",
@@ -576,9 +961,14 @@ export function draftBacklogFromPrompt(prompt: string) {
     },
     {
       title: "Create Sprint Backlog and Burndown",
-      userStory: "As a Scrum Master, I want selected backlog items to become a sprint and drive a burndown chart for sprint health.",
+      userStory:
+        "As a Scrum Master, I want selected backlog items to become a sprint and drive a burndown chart for sprint health.",
       problem: "A Product Backlog alone does not show team commitment or actual progress.",
-      acceptanceCriteria: ["A sprint can be created from backlog items", "Sprint tasks track remaining effort", "Task status changes update burndown automatically"],
+      acceptanceCriteria: [
+        "A sprint can be created from backlog items",
+        "Sprint tasks track remaining effort",
+        "Task status changes update burndown automatically",
+      ],
       status: "Ready" as const,
       effort: 5,
       risk: "Burndown must be based on real task state, not fake progress.",
@@ -587,9 +977,14 @@ export function draftBacklogFromPrompt(prompt: string) {
     },
     {
       title: "Record Sprint Review and Retro",
-      userStory: "As a team lead, I want sprint review and retro records so delivery outcomes and process learning feed the next backlog decision.",
+      userStory:
+        "As a team lead, I want sprint review and retro records so delivery outcomes and process learning feed the next backlog decision.",
       problem: "If sprint results do not become artifacts, the team loses review learning.",
-      acceptanceCriteria: ["Review records accepted and follow-up items", "Retro records action items", "Review and retro records persist through API"],
+      acceptanceCriteria: [
+        "Review records accepted and follow-up items",
+        "Retro records action items",
+        "Review and retro records persist through API",
+      ],
       status: "Ready" as const,
       effort: 3,
       risk: "Follow-up items need a closed loop into the next backlog cycle.",

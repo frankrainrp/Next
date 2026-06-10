@@ -98,11 +98,13 @@ export async function runSixStageAgent({
   userMessage,
   modelChannel = "deepseek",
   stageOverride,
+  customApiKey,
 }: {
   projectId: string;
   userMessage: string;
   modelChannel?: ModelChannel;
   stageOverride?: AiPromptStage;
+  customApiKey?: string;
 }): Promise<AgentTurnResult> {
   const session = await getAgentSession(projectId);
   if (stageOverride) session.stage = stageOverride;
@@ -125,7 +127,7 @@ export async function runSixStageAgent({
   ].join("\n\n---\n\n");
 
   const agent = createReactAgent({
-    llm: createAgentModel(modelChannel),
+    llm: createAgentModel(modelChannel, customApiKey),
     tools: [...searchTools, ...buildArtifactTools(projectId, session)],
   });
 

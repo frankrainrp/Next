@@ -10,9 +10,9 @@ export type ModelChannel = "deepseek" | "openai";
  *
  * Routing env vars stay aligned with model-router.ts / .env.example.
  */
-export function createAgentModel(channel: ModelChannel = "deepseek") {
+export function createAgentModel(channel: ModelChannel = "deepseek", customApiKey?: string) {
   if (channel === "openai") {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = customApiKey || process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("OPENAI_API_KEY_NOT_CONFIGURED");
     return new ChatOpenAI({
       apiKey,
@@ -21,7 +21,7 @@ export function createAgentModel(channel: ModelChannel = "deepseek") {
     });
   }
 
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const apiKey = customApiKey || process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY_NOT_CONFIGURED");
   return new ChatOpenAI({
     apiKey,
@@ -33,6 +33,8 @@ export function createAgentModel(channel: ModelChannel = "deepseek") {
   });
 }
 
-export function hasAgentModel(channel: ModelChannel = "deepseek") {
-  return channel === "openai" ? Boolean(process.env.OPENAI_API_KEY) : Boolean(process.env.DEEPSEEK_API_KEY);
+export function hasAgentModel(channel: ModelChannel = "deepseek", customApiKey?: string) {
+  return channel === "openai"
+    ? Boolean(customApiKey || process.env.OPENAI_API_KEY)
+    : Boolean(customApiKey || process.env.DEEPSEEK_API_KEY);
 }

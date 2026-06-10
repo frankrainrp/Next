@@ -12,6 +12,7 @@ const AgentChatRequestSchema = z.object({
   message: z.string().min(1).max(8000),
   modelChannel: z.enum(["deepseek", "openai"]).default("deepseek"),
   stageOverride: AiPromptStageSchema.optional(),
+  providerApiKey: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
 
-  if (!hasAgentModel(body.modelChannel)) {
+  if (!hasAgentModel(body.modelChannel, body.providerApiKey)) {
     return Response.json(
       {
         ok: false,
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
       userMessage: body.message,
       modelChannel: body.modelChannel,
       stageOverride: body.stageOverride,
+      customApiKey: body.providerApiKey,
     });
     return Response.json({
       ok: true,

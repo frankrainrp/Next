@@ -1,11 +1,10 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { prisma } from "../db";
 import { AiPromptStages, type AiPromptStage } from "./stage-prompts";
 
 /**
  * Persistent state for the six-stage product agent.
- * One session per project; survives reloads so the conversation and the
- * stage machine continue where they left off.
+ * One session per project; stored in database so the conversation and the
+ * stage machine survive restarts and work correctly in serverless envs.
  */
 
 export type AgentChatMessage = {
@@ -26,35 +25,33 @@ export type AgentSession = {
   updatedAt: string;
 };
 
-type SessionFile = {
-  sessions: AgentSession[];
-};
-
-const sessionPath = path.join(process.cwd(), ".data", "agent-sessions.json");
-
-async function readSessions(): Promise<SessionFile> {
-  try {
-    const raw = await readFile(sessionPath, "utf8");
-    return JSON.parse(raw) as SessionFile;
-  } catch {
-    return { sessions: [] };
-  }
-}
-
-async function writeSessions(data: SessionFile) {
-  await mkdir(path.dirname(sessionPath), { recursive: true });
-  await writeFile(sessionPath, JSON.stringify(data, null, 2), "utf8");
-}
-
-function now() {
-  return new Date().toISOString();
+function mapSession(dbSession: any): AgentSession {
+  return {
+    projectId: dbSession.projectId,
+    stage: dbSession.stage as AiPromptStage,
+    completedStages: Array.isArray(dbSession.completedStages)
+      ? dbSession.completedStages
+      : typeof dbSession.completedStages === "string"
+        ? JSON.parse(dbSession.completedStages)
+        : [],
+    handoffs: typeof dbSession.handoffsJson === "string"
+      ? JSON.parse(dbSession.handoffsJson)
+      : dbSession.handoffsJson || {},
+    messages: typeof dbSession.messagesJson === "string"
+      ? JSON.parse(dbSession.messagesJson)
+      : dbSession.messagesJson || [],
+    createdAt: dbSession.createdAt.toISOString(),
+    updatedAt: dbSession.updatedAt.toISOString(),
+  };
 }
 
 export async function getAgentSession(projectId: string): Promise<AgentSession> {
-  const data = await readSessions();
-  const existing = data.sessions.find((session) => session.projectId === projectId);
-  if (existing) return existing;
-  const timestamp = now();
+  const dbSession = await prisma.agentSession.findUnique({
+    where: { projectId },
+  });
+  if (dbSession) return mapSession(dbSession);
+
+  const timestamp = new Date().toISOString();
   return {
     projectId,
     stage: "step1",
@@ -67,22 +64,30 @@ export async function getAgentSession(projectId: string): Promise<AgentSession> 
 }
 
 export async function saveAgentSession(session: AgentSession) {
-  const data = await readSessions();
-  const index = data.sessions.findIndex((candidate) => candidate.projectId === session.projectId);
-  session.updatedAt = now();
-  if (index >= 0) {
-    data.sessions[index] = session;
-  } else {
-    data.sessions.push(session);
-  }
-  await writeSessions(data);
-  return session;
+  const dbSession = await prisma.agentSession.upsert({
+    where: { projectId: session.projectId },
+    update: {
+      stage: session.stage,
+      completedStages: session.completedStages,
+      handoffsJson: session.handoffs as any,
+      messagesJson: session.messages as any,
+      updatedAt: new Date(),
+    },
+    create: {
+      projectId: session.projectId,
+      stage: session.stage,
+      completedStages: session.completedStages,
+      handoffsJson: session.handoffs as any,
+      messagesJson: session.messages as any,
+    },
+  });
+  return mapSession(dbSession);
 }
 
 export async function resetAgentSession(projectId: string) {
-  const data = await readSessions();
-  data.sessions = data.sessions.filter((session) => session.projectId !== projectId);
-  await writeSessions(data);
+  await prisma.agentSession.deleteMany({
+    where: { projectId },
+  });
 }
 
 export function nextStage(stage: AiPromptStage): AiPromptStage {

@@ -215,11 +215,19 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  const body = (await response.json()) as T & { error?: string; message?: string };
-  if (!response.ok) {
-    throw new Error(body.message ?? body.error ?? `Request failed: ${response.status}`);
+  let body: any = null;
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+    try {
+      body = await response.json();
+    } catch (e) {
+      // Ignore JSON parse error on non-compliant content
+    }
   }
-  return body;
+  if (!response.ok) {
+    throw new Error(body?.message ?? body?.error ?? `Request failed: ${response.status}`);
+  }
+  return body as T;
 }
 
 function today(offset = 0) {
@@ -444,7 +452,11 @@ export default function Home() {
       }
       const response = await api<AgentChatResponse>("/api/agent/chat", {
         method: "POST",
-        body: JSON.stringify({ projectId: currentProjectId, message }),
+        body: JSON.stringify({
+          projectId: currentProjectId,
+          message,
+          providerApiKey: deepSeekApiKey || undefined,
+        }),
       });
       setChatMessages((items) => [
         ...items,

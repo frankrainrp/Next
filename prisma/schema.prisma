@@ -24,6 +24,7 @@ model Project {
   title          String
   action         String
   purpose        String
+  timezone       String          @default("Asia/Shanghai")
   phase          ProjectPhase    @default(IntentCapture)
   officialDueAt  DateTime?
   hardDueAt      DateTime?
@@ -38,6 +39,7 @@ model Project {
   sprints        ScrumSprint[]
   proposals      ArtifactProposal[]
   decisionLogs   DecisionLogEntry[]
+  agentSession   AgentSession?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 }
@@ -156,6 +158,8 @@ model ProductBacklogItem {
   sprintItems        SprintBacklogItem[]
   increments         IncrementEvidence[]
   priorityScores     PriorityScore[]
+  technicalSpec       String?
+  codingPrompt        String?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 
@@ -451,4 +455,15 @@ enum ProposalStatus {
   Applied
   Rejected
   Superseded
+}
+
+model AgentSession {
+  projectId       String   @id
+  project         Project  @relation(fields: [projectId], references: [id])
+  stage           String
+  completedStages Json
+  handoffsJson    Json
+  messagesJson    Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

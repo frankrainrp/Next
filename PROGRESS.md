@@ -12,6 +12,10 @@ Source of truth: `docs/product-agent-overview.md` + `docs/saas-blueprint-framewo
 
 ## Current Status (2026-06-10)
 
+- We migrated the Scrum store (`src/server/scrum/store.ts`) and the conversational AI agent session state (`src/server/ai/agent-session.ts`) from local JSON file persistence to a fully serverless-ready PostgreSQL database using Prisma 7.
+- Set up Neon Serverless PostgreSQL with Prisma 7 utilizing `@prisma/adapter-pg` and the `pg` driver adapter, complying with Prisma 7's new engine architecture.
+- Re-verified that the entire codebase compiles successfully (`pnpm typecheck` passed) and the production build completes without warnings (`pnpm build` passed).
+- Updated the E2E verification script `verify-agent-flow.mjs` to fetch project and session data directly from the REST API rather than reading old JSON files.
 - The standalone 6-step Wizard view was REMOVED (component, page wiring, CSS). The six-stage flow
   now lives in the conversational agent itself.
 - Runtime stage prompts are the English translations in `prompt/en/step1_*.md` … `step6_*.md`

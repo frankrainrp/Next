@@ -100,8 +100,8 @@ const main = async () => {
   }
 
   // 7. Inspect artifacts
-  const store = JSON.parse(readFileSync(".data/scrum-store.json", "utf8"));
-  const p = store.projects.find((x) => x.id === pid);
+  const storeResponse = await api("/api/projects", null, "GET");
+  const p = storeResponse.data.find((x) => x.id === pid);
   log(`# ARTIFACT CHECK`);
   log(`**founderBrief:** ${p.context?.founderBrief ? "✅ present" : "❌ MISSING"}\n\`\`\`json\n${JSON.stringify(p.context?.founderBrief ?? null, null, 2).slice(0, 1500)}\n\`\`\``);
   log(`**blueprint:** ${p.context?.blueprint ? "✅ present" : "❌ MISSING"}\n\`\`\`json\n${JSON.stringify(p.context?.blueprint ?? null, null, 2).slice(0, 2500)}\n\`\`\``);
@@ -109,8 +109,8 @@ const main = async () => {
   for (const item of p.backlog) {
     log(`- ${item.priorityBand} · ${item.title} · ${item.effort}h · spec:${item.technicalSpec ? "yes" : "no"} · prompt:${item.codingPrompt ? "yes" : "no"}`);
   }
-  const sessions = JSON.parse(readFileSync(".data/agent-sessions.json", "utf8"));
-  const ses = sessions.sessions.find((x) => x.projectId === pid);
+  const sessionResponse = await api(`/api/agent/session?projectId=${pid}`, null, "GET");
+  const ses = sessionResponse.session;
   log(`**session:** stage=${ses?.stage} completed=[${ses?.completedStages}]`);
   log(`**handoffs:** ${Object.keys(ses?.handoffs ?? {}).join(", ")}`);
   log(`\nVERIFICATION_DONE`);
